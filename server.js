@@ -11,14 +11,17 @@ const readingsRoutes = require('./routes/readings');
 const alertsRoutes = require('./routes/alerts');
 const powerStatusRoutes = require('./routes/powerStatus');
 const healthRoutes = require('./routes/health');
-
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./swagger');
 
 const app = express();
 
 app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
-
 app.use(trackApiHealth);
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -66,6 +69,7 @@ async function initialize() {
     app.listen(PORT, () => {
       console.log(chalk.yellow(`\n✓ Server running at: ${chalk.bold(`http://localhost:${PORT}`)}`));
       console.log(chalk.cyan(`✓ API Health Dashboard: ${chalk.bold(`http://localhost:${PORT}/api/health/stats`)}\n`));
+      console.log(chalk.magenta(`✓ API Docs:            ${chalk.bold(`http://localhost:${PORT}/api-docs`)}\n`));
     });
   } catch (error) {
     console.error(chalk.red('✗ Unable to connect to the database:'), error);

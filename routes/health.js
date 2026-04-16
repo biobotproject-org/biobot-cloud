@@ -4,6 +4,124 @@ const { Op } = require('sequelize');
 const ApiHealth = require('../models/ApiHealth');
 const sequelize = require('../config/database');
 
+/**
+ * @swagger
+ * tags:
+ *   name: Health
+ *   description: API health monitoring and statistics
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     HealthStats:
+ *       type: object
+ *       properties:
+ *         totalRequests:
+ *           type: integer
+ *         successfulRequests:
+ *           type: integer
+ *         failedRequests:
+ *           type: integer
+ *         serverErrors:
+ *           type: integer
+ *         clientErrors:
+ *           type: integer
+ *         errorRate:
+ *           type: number
+ *         serverErrorRate:
+ *           type: number
+ *         averageLatency:
+ *           type: integer
+ *           description: Average response time in ms
+ *         minLatency:
+ *           type: integer
+ *         maxLatency:
+ *           type: integer
+ *         p95Latency:
+ *           type: integer
+ *           description: 95th percentile response time in ms
+ *         p99Latency:
+ *           type: integer
+ *           description: 99th percentile response time in ms
+ *         timeRange:
+ *           type: string
+ *         startTime:
+ *           type: string
+ *           format: date-time
+ *         endTime:
+ *           type: string
+ *           format: date-time
+ *     EndpointStat:
+ *       type: object
+ *       properties:
+ *         endpoint:
+ *           type: string
+ *         method:
+ *           type: string
+ *         requestCount:
+ *           type: integer
+ *         avgLatency:
+ *           type: integer
+ *         minLatency:
+ *           type: integer
+ *         maxLatency:
+ *           type: integer
+ *         errorCount:
+ *           type: integer
+ *         serverErrorCount:
+ *           type: integer
+ *         errorRate:
+ *           type: number
+ *         serverErrorRate:
+ *           type: number
+ *     LatencyTrend:
+ *       type: object
+ *       properties:
+ *         timeSlot:
+ *           type: string
+ *           example: "2024-01-15 14:00:00"
+ *         avgLatency:
+ *           type: integer
+ *         requestCount:
+ *           type: integer
+ *         errorCount:
+ *           type: integer
+ *         serverErrorCount:
+ *           type: integer
+ *         errorRate:
+ *           type: number
+ *         serverErrorRate:
+ *           type: number
+ */
+
+/**
+ * @swagger
+ * /api/health/stats:
+ *   get:
+ *     summary: Get overall API health statistics
+ *     description: Returns aggregate request counts, error rates, and latency percentiles for a given time range.
+ *     tags: [Health]
+ *     parameters:
+ *       - in: query
+ *         name: timeRange
+ *         schema:
+ *           type: string
+ *           enum: [1h, 24h, 7d, 30d]
+ *           default: 24h
+ *         description: Time window to aggregate stats over
+ *     responses:
+ *       200:
+ *         description: Health statistics returned successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HealthStats'
+ *       500:
+ *         description: Failed to fetch API health statistics
+ */
+
 router.get('/api/health/stats', async (req, res) => {
   try {
     const { timeRange = '24h' } = req.query;
@@ -97,6 +215,44 @@ router.get('/api/health/stats', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch API health statistics' });
   }
 });
+/**
+ * @swagger
+ * /api/health/endpoints:
+ *   get:
+ *     summary: Get per-endpoint health statistics
+ *     description: Returns request count, latency, and error rates broken down by each endpoint and HTTP method.
+ *     tags: [Health]
+ *     parameters:
+ *       - in: query
+ *         name: timeRange
+ *         schema:
+ *           type: string
+ *           enum: [1h, 24h, 7d, 30d]
+ *           default: 24h
+ *         description: Time window to aggregate stats over
+ *     responses:
+ *       200:
+ *         description: Per-endpoint statistics returned successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 endpoints:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/EndpointStat'
+ *                 timeRange:
+ *                   type: string
+ *                 startTime:
+ *                   type: string
+ *                   format: date-time
+ *                 endTime:
+ *                   type: string
+ *                   format: date-time
+ *       500:
+ *         description: Failed to fetch endpoint statistics
+ */
 
 router.get('/api/health/endpoints', async (req, res) => {
   try {
@@ -181,7 +337,61 @@ router.get('/api/health/endpoints', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch endpoint statistics' });
   }
 });
-
+/**
+ * @swagger
+ * /api/health/errors:
+ *   get:
+ *     summary: Get recent API errors
+ *     description: Returns a list of recent 4xx/5xx requests and a breakdown of error counts by status code.
+ *     tags: [Health]
+ *     parameters:
+ *       - in: query
+ *         name: timeRange
+ *         schema:
+ *           type: string
+ *           enum: [1h, 24h, 7d, 30d]
+ *           default: 24h
+ *         description: Time window to look back over
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Maximum number of recent errors to return
+ *     responses:
+ *       200:
+ *         description: Error data returned successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 recentErrors:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 errorsByStatus:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       statusCode:
+ *                         type: integer
+ *                       count:
+ *                         type: integer
+ *                 totalServerErrors:
+ *                   type: integer
+ *                 timeRange:
+ *                   type: string
+ *                 startTime:
+ *                   type: string
+ *                   format: date-time
+ *                 endTime:
+ *                   type: string
+ *                   format: date-time
+ *       500:
+ *         description: Failed to fetch error data
+ */
 router.get('/api/health/errors', async (req, res) => {
   try {
     const { timeRange = '24h', limit = 50 } = req.query;
@@ -262,6 +472,53 @@ router.get('/api/health/errors', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch error data' });
   }
 });
+/**
+ * @swagger
+ * /api/health/latency-trends:
+ *   get:
+ *     summary: Get latency and error trends over time
+ *     description: Returns time-bucketed latency averages and error counts, useful for charting performance over a time window.
+ *     tags: [Health]
+ *     parameters:
+ *       - in: query
+ *         name: timeRange
+ *         schema:
+ *           type: string
+ *           enum: [1h, 24h, 7d, 30d]
+ *           default: 24h
+ *         description: Time window to trend over
+ *       - in: query
+ *         name: interval
+ *         schema:
+ *           type: string
+ *           enum: [minute, hour, day]
+ *           default: hour
+ *         description: Bucket size for grouping (note - actual bucketing is driven by timeRange)
+ *     responses:
+ *       200:
+ *         description: Latency trends returned successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 trends:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/LatencyTrend'
+ *                 timeRange:
+ *                   type: string
+ *                 interval:
+ *                   type: string
+ *                 startTime:
+ *                   type: string
+ *                   format: date-time
+ *                 endTime:
+ *                   type: string
+ *                   format: date-time
+ *       500:
+ *         description: Failed to fetch latency trends
+ */
 
 router.get('/api/health/latency-trends', async (req, res) => {
   try {
