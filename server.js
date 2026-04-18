@@ -64,38 +64,25 @@ app.use('/', alertsRoutes);
 app.use('/', powerStatusRoutes);
 app.use('/', healthRoutes);
 
-const RECONNECT_DELAY_MS = 10_000;
-
-async function initDatabase() {
-  try {
-    await sequelize.authenticate();
-    await sequelize.sync({ alter: true });
-    app.locals.dbReady = true;
-    console.log(chalk.green(' Database connected and synchronized.'));
-  } catch (err) {
-    app.locals.dbReady = false;
-    console.error(chalk.red(` Database unavailable: ${err.message}`));
-    console.log(chalk.yellow(`  Retrying in ${RECONNECT_DELAY_MS / 1000} seconds...`));
-    setTimeout(initDatabase, RECONNECT_DELAY_MS);
-  }
-}
-
-sequelize.addHook('afterDisconnect', () => {
-  if (app.locals.dbReady) {
-    app.locals.dbReady = false;
-    console.warn(chalk.yellow(' Database connection lost. Attempting to reconnect...'));
-    setTimeout(initDatabase, RECONNECT_DELAY_MS);
-  }
-});
-
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(chalk.blue('\n Initializing server...'));
   console.log(chalk.yellow(`✓ Server running at:      ${chalk.bold(`http://localhost:${PORT}`)}`));
   console.log(chalk.cyan(`✓ API Health Dashboard:   ${chalk.bold(`http://localhost:${PORT}/api/health/stats`)}`));
   console.log(chalk.magenta(`✓ API Docs:               ${chalk.bold(`http://localhost:${PORT}/api-docs`)}\n`));
-  initDatabase();
+  
+  sequelize.setDbReadyCallback(async (ready) => {
+    app.locals.dbReady = ready;
+    if (ready) {
+      try {
+        await sequelize.sync({ alter: true });
+        console.log(chalk.green(' Database synchronized.'));
+      } catch (err) {
+        console.error(chalk.red(` Database sync error: ${err.message}`));
+      }
+    }
+  });
 });
 
 module.exports = { app, sequelize };

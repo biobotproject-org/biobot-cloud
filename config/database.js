@@ -37,14 +37,25 @@ console.table({
 
 const RECONNECT_DELAY_MS = 10_000;
 let isConnected = false;
+let dbReadyCallback = null;
+
+sequelize.setDbReadyCallback = function(callback) {
+  dbReadyCallback = callback;
+};
 
 async function connectWithRetry() {
   try {
     await sequelize.authenticate();
     isConnected = true;
     console.log(chalk.greenBright('✔ Database connection established successfully.'));
+    if (dbReadyCallback) {
+      dbReadyCallback(true);
+    }
   } catch (err) {
     isConnected = false;
+    if (dbReadyCallback) {
+      dbReadyCallback(false);
+    }
     console.error(chalk.redBright(`✘ Unable to connect to the database: ${err.message}`));
     console.log(chalk.yellow(`  ↻ Retrying in ${RECONNECT_DELAY_MS / 1000} seconds...`));
     setTimeout(connectWithRetry, RECONNECT_DELAY_MS);
@@ -54,6 +65,9 @@ async function connectWithRetry() {
 sequelize.addHook('afterDisconnect', () => {
   if (isConnected) {
     isConnected = false;
+    if (dbReadyCallback) {
+      dbReadyCallback(false);
+    }
     console.warn(chalk.yellow('⚠ Database connection lost. Attempting to reconnect...'));
     setTimeout(connectWithRetry, RECONNECT_DELAY_MS);
   }
