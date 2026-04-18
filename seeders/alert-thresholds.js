@@ -14,6 +14,8 @@ require('dotenv').config();
 const { AlertThreshold } = require('../models');
 const sequelize = require('../config/database');
 
+const RETRY_DELAY_MS = 10_000;
+
 const DEFAULT_THRESHOLDS = [
     // ── Temperature ──────────────────────────────────────────────────────────
     {
@@ -108,11 +110,11 @@ async function seed() {
         }
 
         console.log(`[seed] alert_thresholds: ${inserted} inserted, ${skipped} already existed.`);
+        await sequelize.close();
     } catch (err) {
         console.error('[seed] Failed:', err.message);
-        process.exit(1);
-    } finally {
-        await sequelize.close();
+        console.log(`[seed] Retrying in ${RETRY_DELAY_MS / 1000} seconds...`);
+        setTimeout(seed, RETRY_DELAY_MS);
     }
 }
 

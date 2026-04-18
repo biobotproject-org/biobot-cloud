@@ -60,14 +60,45 @@ router.get('/readings', authenticate, async (req, res) => {
     const limitNum = parseInt(limit, 10);
     const offset = (pageNum - 1) * limitNum;
 
-    const readings = await Reading.findAll({
+    const validGroupSortFields = ['timestamp', 'readingCount'];
+    const groupSortField = validGroupSortFields.includes(sortBy) ? sortBy : 'timestamp';
+
+    const groupedRequestsPage = await Reading.findAll({
       where,
-      include: [{ model: Device, as: 'device' }],
-      order: [['timestamp', orderDirection]]
+      attributes: [
+        'requestId',
+        [Sequelize.fn('MAX', Sequelize.col('timestamp')), 'timestamp'],
+        [Sequelize.fn('COUNT', Sequelize.col('id')), 'readingCount']
+      ],
+      group: ['requestId'],
+      order: [[Sequelize.literal(groupSortField), orderDirection]],
+      limit: limitNum,
+      offset,
+      raw: true,
+      subQuery: false
     });
 
+    const [totalRequests, totalReadings] = await Promise.all([
+      Reading.count({ where, distinct: true, col: 'requestId' }),
+      Reading.count({ where })
+    ]);
+
+    const requestIds = groupedRequestsPage.map(group => group.requestId);
+
+    let readings = [];
+    if (requestIds.length > 0) {
+      readings = await Reading.findAll({
+        where: {
+          ...where,
+          requestId: { [Sequelize.Op.in]: requestIds }
+        },
+        include: [{ model: Device, as: 'device' }],
+        order: [['timestamp', orderDirection]]
+      });
+    }
+
     const groupedByRequestId = {};
-    
+
     readings.forEach(reading => {
       const reqId = reading.requestId;
       if (!groupedByRequestId[reqId]) {
@@ -91,26 +122,29 @@ router.get('/readings', authenticate, async (req, res) => {
       groupedByRequestId[reqId].readingCount++;
     });
 
-    let groupedRequests = Object.values(groupedByRequestId);
-    
-    const validGroupSortFields = ['timestamp', 'readingCount'];
-    if (validGroupSortFields.includes(sortBy)) {
-      const sortMultiplier = orderDirection === 'ASC' ? 1 : -1;
-      groupedRequests.sort((a, b) => {
-        if (a[sortBy] < b[sortBy]) return -sortMultiplier;
-        if (a[sortBy] > b[sortBy]) return sortMultiplier;
-        return 0;
-      });
-    }
+    const groupedRequests = groupedRequestsPage.map(group => {
+      const reqId = group.requestId;
+      const groupedRequest = groupedByRequestId[reqId] || {
+        requestId: reqId,
+        timestamp: group.timestamp,
+        deviceId: null,
+        deviceName: null,
+        deviceType: null,
+        readingCount: Number(group.readingCount) || 0,
+        readings: []
+      };
 
-    const totalRequests = groupedRequests.length;
+      groupedRequest.timestamp = group.timestamp;
+      groupedRequest.readingCount = Number(group.readingCount) || groupedRequest.readingCount;
+      return groupedRequest;
+    });
+
     const totalPages = Math.ceil(totalRequests / limitNum);
-    groupedRequests = groupedRequests.slice(offset, offset + limitNum);
 
     res.json({ 
       count: groupedRequests.length,
       totalRequests: totalRequests,
-      totalReadings: readings.length,
+      totalReadings,
       page: pageNum,
       totalPages,
       limit: limitNum,
