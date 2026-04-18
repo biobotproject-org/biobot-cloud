@@ -29,6 +29,10 @@ const ApiKey = sequelize.define('ApiKey', {
         allowNull: false,
         unique: true
     },
+    prefix: {
+        type: DataTypes.STRING(8),
+        allowNull: true  // nullable so existing rows without a prefix still load
+    },
     lastUsedAt: {
         type: DataTypes.DATE,
         allowNull: true
@@ -41,6 +45,9 @@ const ApiKey = sequelize.define('ApiKey', {
         },
         {
             fields: ['key']
+        },
+        {
+            fields: ['prefix']
         }
     ]
 });
