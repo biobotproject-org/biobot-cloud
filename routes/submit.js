@@ -1,23 +1,318 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid'); 
-const { Device, Reading, Alert } = require('../models');
+const { v4: uuidv4 } = require('uuid');
+const { Device, Reading, Alert, AlertThreshold } = require('../models');
 const { authenticate } = require('../middleware/authenticate');
 const router = express.Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Sensor Data
+ *   description: >
+ *     Submit, query, and delete sensor readings from BioBot field devices.
+ *     Each submission is a batch of one or more device payloads. Every reading
+ *     is automatically evaluated against the configured alert thresholds —
+ *     matching readings create Alert records without any extra API call.
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *
+ *     SensorReading:
+ *       type: object
+ *       description: A single sensor measurement from a field device.
+ *       required:
+ *         - value
+ *         - unit
+ *         - readingType
+ *       properties:
+ *         value:
+ *           type: number
+ *           format: float
+ *           description: The numeric measurement value.
+ *           example: 95.4
+ *         unit:
+ *           type: string
+ *           description: The unit of measurement (e.g. "°C", "%", "ppm").
+ *           example: "°C"
+ *         readingType:
+ *           type: string
+ *           description: >
+ *             Sensor category. Must match the readingType used in alert
+ *             thresholds for automatic alert generation. Common values:
+ *             temperature, humidity, smoke, co.
+ *           example: "temperature"
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           description: >
+ *             ISO 8601 timestamp of when the reading was taken on-device.
+ *             Defaults to the server current time if omitted — useful when
+ *             a device is submitting a backlog after reconnecting.
+ *           example: "2026-04-18T14:22:00.000Z"
+ *
+ *     DevicePayload:
+ *       type: object
+ *       description: >
+ *         A group of readings from one device. All readings in the array
+ *         share the same requestId (assigned server-side) for traceability.
+ *       required:
+ *         - deviceId
+ *         - readings
+ *       properties:
+ *         deviceId:
+ *           type: string
+ *           description: The unique identifier of the submitting device (must already exist in the DB).
+ *           example: "BIOBOT-001"
+ *         readings:
+ *           type: array
+ *           minItems: 1
+ *           items:
+ *             $ref: '#/components/schemas/SensorReading'
+ *
+ *     SubmitResult:
+ *       type: object
+ *       description: Per-device outcome within a batch submission response.
+ *       properties:
+ *         requestId:
+ *           type: string
+ *           format: uuid
+ *           description: >
+ *             Server-assigned UUID that uniquely identifies this device submission.
+ *             Use it to look up all readings from this batch via GET /sensordata?requestId=<id>.
+ *           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *         success:
+ *           type: boolean
+ *           example: true
+ *         message:
+ *           type: string
+ *           description: Present on success.
+ *           example: "Readings submitted successfully"
+ *         count:
+ *           type: integer
+ *           description: Number of readings saved (present on success).
+ *           example: 3
+ *         error:
+ *           type: string
+ *           description: Error detail (present on failure only).
+ *           example: "Device not found"
+ *         readings:
+ *           type: array
+ *           description: The persisted Reading records (present on success).
+ *           items:
+ *             type: object
+ *
+ *     StoredReading:
+ *       type: object
+ *       description: A persisted reading record as returned by GET /sensordata.
+ *       properties:
+ *         id:
+ *           type: integer
+ *           example: 42
+ *         value:
+ *           type: number
+ *           example: 95.4
+ *         unit:
+ *           type: string
+ *           example: "°C"
+ *         readingType:
+ *           type: string
+ *           example: "temperature"
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           example: "2026-04-18T14:22:00.000Z"
+ *         requestId:
+ *           type: string
+ *           format: uuid
+ *           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *         device:
+ *           type: object
+ *           properties:
+ *             deviceId:
+ *               type: string
+ *               example: "BIOBOT-001"
+ *             name:
+ *               type: string
+ *               example: "Ridge Station Alpha"
+ */
+
+/**
+ * @swagger
+ * /sensordata:
+ *   post:
+ *     summary: Submit sensor readings from one or more devices
+ *     description: >
+ *       Accepts a batch of device payloads in a single request. Each payload
+ *       contains a deviceId and an array of readings. The server assigns a
+ *       unique requestId (UUID v4) to each device payload for end-to-end
+ *       traceability.
+ *
+ *
+ *       Alert evaluation — after readings are persisted, each one is
+ *       automatically compared against every enabled row in the
+ *       alert_thresholds table. A reading can trigger multiple alerts if it
+ *       crosses several thresholds (e.g. a temperature of 105C crosses both
+ *       the > 80 high and > 100 critical rules simultaneously).
+ *
+ *
+ *       Partial success — the batch continues even if one device payload
+ *       fails. The response status reflects the overall outcome:
+ *       201 all succeeded, 207 mixed, 400 all failed.
+ *     tags: [Sensor Data]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - requests
+ *             properties:
+ *               requests:
+ *                 type: array
+ *                 minItems: 1
+ *                 description: One entry per device submitting readings in this batch.
+ *                 items:
+ *                   $ref: '#/components/schemas/DevicePayload'
+ *           example:
+ *             requests:
+ *               - deviceId: "BIOBOT-001"
+ *                 readings:
+ *                   - value: 95.4
+ *                     unit: "°C"
+ *                     readingType: "temperature"
+ *                     timestamp: "2026-04-18T14:22:00.000Z"
+ *                   - value: 12.1
+ *                     unit: "%"
+ *                     readingType: "humidity"
+ *               - deviceId: "BIOBOT-002"
+ *                 readings:
+ *                   - value: 73.0
+ *                     unit: "ppm"
+ *                     readingType: "smoke"
+ *     responses:
+ *       201:
+ *         description: All device payloads in the batch were processed successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalRequests:
+ *                   type: integer
+ *                   example: 2
+ *                 successful:
+ *                   type: integer
+ *                   example: 2
+ *                 failed:
+ *                   type: integer
+ *                   example: 0
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/SubmitResult'
+ *       207:
+ *         description: >
+ *           Multi-Status — at least one payload succeeded and at least one
+ *           failed. Inspect each entry in results individually.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalRequests:
+ *                   type: integer
+ *                   example: 2
+ *                 successful:
+ *                   type: integer
+ *                   example: 1
+ *                 failed:
+ *                   type: integer
+ *                   example: 1
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/SubmitResult'
+ *       400:
+ *         description: >
+ *           Bad request — either the top-level requests array is missing or
+ *           malformed, or every device payload in the batch failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               missingRequests:
+ *                 summary: Top-level requests array absent or not an array
+ *                 value:
+ *                   error: "Invalid request format. Expected { requests: [...] }"
+ *               allFailed:
+ *                 summary: Every payload failed (e.g. all device IDs unknown)
+ *                 value:
+ *                   totalRequests: 1
+ *                   successful: 0
+ *                   failed: 1
+ *                   results:
+ *                     - requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *                       success: false
+ *                       error: "Device not found"
+ *       401:
+ *         description: Unauthorized — missing or invalid authentication token.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+
+/**
+ * Evaluate a single reading value against a threshold operator.
+ * Returns true if the reading satisfies the threshold condition.
+ */
+function exceedsThreshold(readingValue, operator, thresholdValue) {
+  const v = parseFloat(readingValue);
+  const t = parseFloat(thresholdValue);
+  switch (operator) {
+    case '>':  return v > t;
+    case '>=': return v >= t;
+    case '<':  return v < t;
+    case '<=': return v <= t;
+    default:   return false;
+  }
+}
+
+/**
+ * Interpolate {value} and {unit} tokens in a threshold message template.
+ * Example: "High temperature detected: {value}{unit}" → "High temperature detected: 95°C"
+ */
+function formatMessage(template, value, unit) {
+  return template
+      .replace('{value}', value)
+      .replace('{unit}', unit ?? '');
+}
 
 router.post('/sensordata', authenticate, async (req, res) => {
   try {
     const { requests } = req.body;
-    
+
     if (!requests || !Array.isArray(requests)) {
-      return res.status(400).json({ 
-        error: 'Invalid request format. Expected { requests: [...] }' 
+      return res.status(400).json({
+        error: 'Invalid request format. Expected { requests: [...] }'
       });
     }
+
+    // Load all enabled thresholds once per batch — the table is small and
+    // thresholds are shared across all readings in this request.
+    const thresholds = await AlertThreshold.findAll({ where: { enabled: true } });
 
     const results = [];
 
     for (const request of requests) {
-      const requestId = uuidv4(); 
+      const requestId = uuidv4();
       const { deviceId, readings } = request;
 
       try {
@@ -43,27 +338,36 @@ router.post('/sensordata', authenticate, async (req, res) => {
         await device.update({ lastSeen: new Date() });
 
         const createdReadings = await Promise.all(
-          readings.map(reading =>
-            Reading.create({
-              deviceId: device.id,
-              value: reading.value,
-              unit: reading.unit,
-              readingType: reading.readingType,
-              timestamp: reading.timestamp || new Date(),
-              requestId 
-            })
-          )
+            readings.map(reading =>
+                Reading.create({
+                  deviceId: device.id,
+                  value: reading.value,
+                  unit: reading.unit,
+                  readingType: reading.readingType,
+                  timestamp: reading.timestamp || new Date(),
+                  requestId
+                })
+            )
         );
 
+        // Evaluate every reading against every matching enabled threshold.
+        // A single reading can trigger multiple alerts (e.g. crossing both a
+        // "high" and a "critical" threshold for the same sensor type).
         for (const reading of readings) {
-          if (reading.readingType === 'temperature' && reading.value > 80) {
-            await Alert.create({
-              deviceId: device.id,
-              severity: 'high',
-              message: `High temperature detected: ${reading.value}${reading.unit}`,
-              triggeredAt: new Date(),
-              requestId
-            });
+          const matchingThresholds = thresholds.filter(
+              t => t.readingType === reading.readingType
+          );
+
+          for (const threshold of matchingThresholds) {
+            if (exceedsThreshold(reading.value, threshold.operator, threshold.thresholdValue)) {
+              await Alert.create({
+                deviceId: device.id,
+                severity: threshold.severity,
+                message: formatMessage(threshold.message, reading.value, reading.unit),
+                triggeredAt: new Date(),
+                requestId
+              });
+            }
           }
         }
 
@@ -84,8 +388,8 @@ router.post('/sensordata', authenticate, async (req, res) => {
     }
 
     const successCount = results.filter(r => r.success).length;
-    const statusCode = successCount === results.length ? 201 : 
-                       successCount > 0 ? 207 : 400; 
+    const statusCode = successCount === results.length ? 201 :
+        successCount > 0 ? 207 : 400;
 
     res.status(statusCode).json({
       totalRequests: results.length,
@@ -98,11 +402,151 @@ router.post('/sensordata', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /sensordata:
+ *   get:
+ *     summary: Query stored sensor readings
+ *     description: >
+ *       Returns a list of readings filtered by any combination of the query
+ *       parameters below. All filters are optional and AND-combined. Results
+ *       include the parent device (deviceId and name) via a JOIN.
+ *
+ *
+ *       Results are capped at the `limit` value (default 100). For large
+ *       datasets use `startDate` / `endDate` to narrow the window, or
+ *       `requestId` to retrieve exactly one submission batch.
+ *     tags: [Sensor Data]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: deviceId
+ *         schema:
+ *           type: string
+ *         description: Filter by device identifier (e.g. "BIOBOT-001"). Returns 404 if the device does not exist.
+ *         example: "BIOBOT-001"
+ *       - in: query
+ *         name: requestId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by the server-assigned request UUID to retrieve all readings from a single submission batch.
+ *         example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *       - in: query
+ *         name: readingType
+ *         schema:
+ *           type: string
+ *         description: Filter by sensor type (e.g. "temperature", "humidity", "smoke", "co").
+ *         example: "temperature"
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Return only readings at or after this ISO 8601 timestamp (inclusive).
+ *         example: "2026-04-18T00:00:00.000Z"
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Return only readings at or before this ISO 8601 timestamp (inclusive).
+ *         example: "2026-04-18T23:59:59.999Z"
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [timestamp, value, readingType, id]
+ *           default: timestamp
+ *         description: Field to sort results by. Invalid values silently fall back to timestamp.
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [ASC, DESC]
+ *           default: DESC
+ *         description: Sort direction. Case-insensitive; invalid values default to DESC.
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *           minimum: 1
+ *         description: Maximum number of readings to return.
+ *         example: 50
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved readings matching the applied filters.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count:
+ *                   type: integer
+ *                   description: Number of readings returned.
+ *                   example: 3
+ *                 filters:
+ *                   type: object
+ *                   description: Echo of the filters that were applied, including resolved sort field and direction.
+ *                   properties:
+ *                     deviceId:
+ *                       type: string
+ *                       nullable: true
+ *                       example: "BIOBOT-001"
+ *                     requestId:
+ *                       type: string
+ *                       nullable: true
+ *                       example: null
+ *                     readingType:
+ *                       type: string
+ *                       nullable: true
+ *                       example: "temperature"
+ *                     startDate:
+ *                       type: string
+ *                       nullable: true
+ *                       example: null
+ *                     endDate:
+ *                       type: string
+ *                       nullable: true
+ *                       example: null
+ *                     sortBy:
+ *                       type: string
+ *                       example: "timestamp"
+ *                     sortOrder:
+ *                       type: string
+ *                       example: "DESC"
+ *                 readings:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/StoredReading'
+ *       401:
+ *         description: Unauthorized — missing or invalid authentication token.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: The specified deviceId does not exist.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Device not found"
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/sensordata', authenticate, async (req, res) => {
   try {
-    const { 
-      deviceId, 
-      limit = 100, 
+    const {
+      deviceId,
+      limit = 100,
       requestId,
       readingType,
       startDate,
@@ -110,7 +554,7 @@ router.get('/sensordata', authenticate, async (req, res) => {
       sortBy = 'timestamp',
       sortOrder = 'DESC'
     } = req.query;
-    
+
     const where = {};
 
     if (deviceId) {
@@ -146,7 +590,7 @@ router.get('/sensordata', authenticate, async (req, res) => {
       include: [{ model: Device, as: 'device', attributes: ['deviceId', 'name'] }]
     });
 
-    res.json({ 
+    res.json({
       count: readings.length,
       filters: {
         deviceId,
@@ -157,14 +601,100 @@ router.get('/sensordata', authenticate, async (req, res) => {
         sortBy: orderField,
         sortOrder: orderDirection
       },
-      readings 
+      readings
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Supports ?deviceId=<id> or ?readingId=<id>
+/**
+ * @swagger
+ * /sensordata:
+ *   delete:
+ *     summary: Delete sensor readings
+ *     description: >
+ *       Deletes readings by either a single `readingId` or all readings for a
+ *       given `deviceId`. Exactly one of the two parameters must be provided.
+ *
+ *
+ *       Deleting by `deviceId` is a bulk operation — it removes every reading
+ *       ever recorded for that device. This cannot be undone.
+ *     tags: [Sensor Data]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: readingId
+ *         schema:
+ *           type: integer
+ *         description: >
+ *           Delete a single reading by its primary key.
+ *           Takes precedence over deviceId if both are supplied.
+ *         example: 42
+ *       - in: query
+ *         name: deviceId
+ *         schema:
+ *           type: string
+ *         description: >
+ *           Delete ALL readings for this device. The device record itself is
+ *           not deleted — only its associated readings.
+ *         example: "BIOBOT-001"
+ *     responses:
+ *       200:
+ *         description: Readings deleted successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *             examples:
+ *               byReadingId:
+ *                 summary: Single reading deleted
+ *                 value:
+ *                   message: "Reading deleted successfully."
+ *               byDeviceId:
+ *                 summary: All readings for a device deleted
+ *                 value:
+ *                   message: "Deleted 47 readings for device BIOBOT-001."
+ *       400:
+ *         description: Neither deviceId nor readingId was provided.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Provide deviceId or readingId to delete."
+ *       401:
+ *         description: Unauthorized — missing or invalid authentication token.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: The specified readingId or deviceId was not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               readingNotFound:
+ *                 summary: readingId does not exist
+ *                 value:
+ *                   error: "Reading not found."
+ *               deviceNotFound:
+ *                 summary: deviceId does not exist
+ *                 value:
+ *                   error: "Device not found."
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.delete('/sensordata', authenticate, async (req, res) => {
   try {
     const { deviceId, readingId } = req.query;
