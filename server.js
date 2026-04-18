@@ -72,11 +72,12 @@ app.listen(PORT, async () => {
   console.log(chalk.cyan(`✓ API Health Dashboard:   ${chalk.bold(`http://localhost:${PORT}/api/health/stats`)}`));
   console.log(chalk.magenta(`✓ API Docs:               ${chalk.bold(`http://localhost:${PORT}/api-docs`)}\n`));
   
-  sequelize.setDbReadyCallback(async (ready) => {
+  sequelize.setDbReadyCallback(async (ready, alreadySynced) => {
     app.locals.dbReady = ready;
-    if (ready) {
+    if (ready && !alreadySynced) {
       try {
         await sequelize.sync({ alter: true });
+        sequelize.setDbSynchronized();
         console.log(chalk.green(' Database synchronized.'));
       } catch (err) {
         console.error(chalk.red(` Database sync error: ${err.message}`));

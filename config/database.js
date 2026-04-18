@@ -37,41 +37,42 @@ console.table({
 
 const RECONNECT_DELAY_MS = 10_000;
 let isConnected = false;
+let isSynchronized = false;
 let dbReadyCallback = null;
 
 sequelize.setDbReadyCallback = function(callback) {
   dbReadyCallback = callback;
+  // If we're already connected, immediately notify the new callback
+  if (isConnected && dbReadyCallback) {
+    dbReadyCallback(true, isSynchronized);
+  }
+};
+
+sequelize.setDbSynchronized = function() {
+  isSynchronized = true;
 };
 
 async function connectWithRetry() {
   try {
     await sequelize.authenticate();
-    isConnected = true;
-    console.log(chalk.greenBright('✔ Database connection established successfully.'));
+    if (!isConnected) {
+      isConnected = true;
+      console.log(chalk.greenBright('✔ Database connection established successfully.'));
+    }
     if (dbReadyCallback) {
-      dbReadyCallback(true);
+      dbReadyCallback(true, isSynchronized);
     }
   } catch (err) {
     isConnected = false;
+    isSynchronized = false;
     if (dbReadyCallback) {
-      dbReadyCallback(false);
+      dbReadyCallback(false, false);
     }
     console.error(chalk.redBright(`✘ Unable to connect to the database: ${err.message}`));
     console.log(chalk.yellow(`  ↻ Retrying in ${RECONNECT_DELAY_MS / 1000} seconds...`));
     setTimeout(connectWithRetry, RECONNECT_DELAY_MS);
   }
 }
-
-sequelize.addHook('afterDisconnect', () => {
-  if (isConnected) {
-    isConnected = false;
-    if (dbReadyCallback) {
-      dbReadyCallback(false);
-    }
-    console.warn(chalk.yellow('⚠ Database connection lost. Attempting to reconnect...'));
-    setTimeout(connectWithRetry, RECONNECT_DELAY_MS);
-  }
-});
 
 connectWithRetry();
 
