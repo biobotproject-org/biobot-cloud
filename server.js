@@ -28,16 +28,15 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     const duration = Date.now() - start;
     const methodColor =
-        req.method === 'GET' ? chalk.cyan :
-            req.method === 'POST' ? chalk.green :
-                req.method === 'PUT' ? chalk.yellow :
-                    req.method === 'PATCH' ? chalk.magenta :
-                        req.method === 'DELETE' ? chalk.red : chalk.white;
+        req.method === 'GET'    ? chalk.cyan    :
+            req.method === 'POST'   ? chalk.green   :
+                req.method === 'PUT'    ? chalk.yellow  :
+                    req.method === 'PATCH'  ? chalk.magenta :
+                        req.method === 'DELETE' ? chalk.red     : chalk.white;
     const statusColor =
-        res.statusCode >= 500 ? chalk.redBright :
+        res.statusCode >= 500 ? chalk.redBright    :
             res.statusCode >= 400 ? chalk.yellowBright :
-                res.statusCode >= 300 ? chalk.cyanBright :
-                    chalk.greenBright;
+                res.statusCode >= 300 ? chalk.cyanBright   : chalk.greenBright;
     console.log(
         `${chalk.gray(new Date().toLocaleTimeString())} | ` +
         `${methodColor(req.method)} ${chalk.white(req.originalUrl)} ` +
@@ -48,6 +47,14 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use((req, res, next) => {
+  if (!app.locals.dbReady) {
+    return res.status(503).json({
+      error: 'Service temporarily unavailable — database is reconnecting, please try again shortly.',
+    });
+  }
+  next();
+});
 
 app.use('/', authRoutes);
 app.use('/', submitRoutes);
@@ -57,25 +64,38 @@ app.use('/', alertsRoutes);
 app.use('/', powerStatusRoutes);
 app.use('/', healthRoutes);
 
-const PORT = process.env.PORT || 3000;
+const RECONNECT_DELAY_MS = 10_000;
 
-async function initialize() {
+async function initDatabase() {
   try {
-    console.log(chalk.blue('\n Initializing server...'));
     await sequelize.authenticate();
-    console.log(chalk.green('✓ Database connection established successfully.'));
     await sequelize.sync({ alter: true });
-    console.log(chalk.green('✓ Database synchronized.'));
-    app.listen(PORT, () => {
-      console.log(chalk.yellow(`\n✓ Server running at: ${chalk.bold(`http://localhost:${PORT}`)}`));
-      console.log(chalk.cyan(`✓ API Health Dashboard: ${chalk.bold(`http://localhost:${PORT}/api/health/stats`)}\n`));
-      console.log(chalk.magenta(`✓ API Docs:            ${chalk.bold(`http://localhost:${PORT}/api-docs`)}\n`));
-    });
-  } catch (error) {
-    console.error(chalk.red('✗ Unable to connect to the database:'), error);
+    app.locals.dbReady = true;
+    console.log(chalk.green(' Database connected and synchronized.'));
+  } catch (err) {
+    app.locals.dbReady = false;
+    console.error(chalk.red(` Database unavailable: ${err.message}`));
+    console.log(chalk.yellow(`  Retrying in ${RECONNECT_DELAY_MS / 1000} seconds...`));
+    setTimeout(initDatabase, RECONNECT_DELAY_MS);
   }
 }
 
-initialize();
+sequelize.addHook('afterDisconnect', () => {
+  if (app.locals.dbReady) {
+    app.locals.dbReady = false;
+    console.warn(chalk.yellow(' Database connection lost. Attempting to reconnect...'));
+    setTimeout(initDatabase, RECONNECT_DELAY_MS);
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(chalk.blue('\n Initializing server...'));
+  console.log(chalk.yellow(`✓ Server running at:      ${chalk.bold(`http://localhost:${PORT}`)}`));
+  console.log(chalk.cyan(`✓ API Health Dashboard:   ${chalk.bold(`http://localhost:${PORT}/api/health/stats`)}`));
+  console.log(chalk.magenta(`✓ API Docs:               ${chalk.bold(`http://localhost:${PORT}/api-docs`)}\n`));
+  initDatabase();
+});
 
 module.exports = { app, sequelize };
