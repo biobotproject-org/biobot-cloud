@@ -9,14 +9,22 @@ const User = sequelize.define('User', {
   },
   username: {
     type: DataTypes.STRING(50),
-    unique: true,
+    unique: {
+      msg: 'This username is already taken'
+    },
     allowNull: false
   },
   email: {
     type: DataTypes.STRING(100),
-    unique: true,
+    unique: {
+      msg: 'This email is already in use'
+    },
     allowNull: false,
-    validate: { isEmail: true }
+    validate: {
+      isEmail: {
+        msg: 'Please provide a valid email address'
+      }
+    }
   },
   password: {
     type: DataTypes.STRING(255),
