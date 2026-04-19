@@ -4,6 +4,7 @@
     "chalk": "^4.1.2",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "express-validator": "^7.2.1",
     "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.22.0",
     "sequelize": "^6.37.8",

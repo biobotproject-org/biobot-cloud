@@ -1,6 +1,7 @@
 const express = require('express');
 const { Alert, Device, Location, AlertAcknowledgment, User } = require('../models');
 const { authenticate } = require('../middleware/authenticate');
+const { validateAcknowledgeAlert } = require('../middleware/validate');
 
 const router = express.Router();
 
@@ -108,7 +109,7 @@ const router = express.Router();
 router.get('/alerts', authenticate, async (req, res) => {
   try {
     const { status, severity, deviceId } = req.query;
-    
+
     const where = {};
     if (status) where.status = status;
     if (severity) where.severity = severity;
@@ -177,7 +178,7 @@ router.get('/alerts', authenticate, async (req, res) => {
  *       404:
  *         description: Alert not found
  */
-router.post('/alerts/:id/acknowledge', authenticate, async (req, res) => {
+router.post('/alerts/:id/acknowledge', authenticate, validateAcknowledgeAlert, async (req, res) => {
   try {
     const { id } = req.params;
     const { notes } = req.body;

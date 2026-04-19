@@ -2,6 +2,8 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { Device, Reading, Alert, AlertThreshold } = require('../models');
 const { authenticate } = require('../middleware/authenticate');
+const { authorizeDevice } = require('../middleware/authorizeDevice');
+const { validateSensorData } = require('../middleware/validate');
 const router = express.Router();
 
 /**
@@ -295,7 +297,7 @@ function formatMessage(template, value, unit) {
       .replace('{unit}', unit ?? '');
 }
 
-router.post('/sensordata', authenticate, async (req, res) => {
+router.post('/sensordata', authenticate, validateSensorData, async (req, res) => {
   try {
     const { requests } = req.body;
 
@@ -704,13 +706,48 @@ router.delete('/sensordata', authenticate, async (req, res) => {
     }
 
     if (readingId) {
-      const deleted = await Reading.destroy({ where: { id: readingId } });
-      if (!deleted) return res.status(404).json({ error: 'Reading not found.' });
+      // For readingId deletion: find the reading, then check ownership of its device
+      const reading = await Reading.findByPk(readingId);
+      if (!reading) return res.status(404).json({ error: 'Reading not found.' });
+
+      // Admins can delete any reading
+      if (req.user.role !== 'admin') {
+        const device = await Device.findByPk(reading.deviceId);
+        if (!device) {
+          return res.status(404).json({ error: 'Device not found.' });
+        }
+        if (device.createdBy === null) {
+          return res.status(403).json({
+            error: 'Forbidden: this device has no registered owner. Contact an administrator.'
+          });
+        }
+        if (device.createdBy !== req.user.id) {
+          return res.status(403).json({
+            error: 'Forbidden: you do not have permission to delete readings for this device.'
+          });
+        }
+      }
+
+      await reading.destroy();
       return res.json({ message: 'Reading deleted successfully.' });
     }
 
+    // deviceId path — find device and check ownership
     const device = await Device.findOne({ where: { deviceId } });
     if (!device) return res.status(404).json({ error: 'Device not found.' });
+
+    if (req.user.role !== 'admin') {
+      if (device.createdBy === null) {
+        return res.status(403).json({
+          error: 'Forbidden: this device has no registered owner. Contact an administrator.'
+        });
+      }
+      if (device.createdBy !== req.user.id) {
+        return res.status(403).json({
+          error: 'Forbidden: you do not have permission to delete readings for this device.'
+        });
+      }
+    }
 
     const deletedCount = await Reading.destroy({ where: { deviceId: device.id } });
     res.json({ message: `Deleted ${deletedCount} readings for device ${deviceId}.` });
