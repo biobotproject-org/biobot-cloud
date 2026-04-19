@@ -1,6 +1,7 @@
 const express = require('express');
 const { Device, Location, Reading } = require('../models');
 const { authenticate } = require('../middleware/authenticate');
+const { validateCreateDevice, validatePatchDeviceStatus } = require('../middleware/validate');
 const router = express.Router();
 
 /**
@@ -245,7 +246,7 @@ router.get('/devices', authenticate, async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/devices', authenticate, async (req, res) => {
+router.post('/devices', authenticate, validateCreateDevice, async (req, res) => {
   try {
     const { deviceId, name, type, locationId, status } = req.body;
     if (!deviceId || !name || !type) {
@@ -427,7 +428,7 @@ router.delete('/devices/:id', authenticate, async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.patch('/devices/:id/status', authenticate, async (req, res) => {
+router.patch('/devices/:id/status', authenticate, validatePatchDeviceStatus, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
