@@ -4,6 +4,123 @@ const { Reading, Device } = require('../models');
 const { authenticate } = require('../middleware/authenticate');
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Readings
+ *   description: Historical sensor data retrieval
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     ReadingGroup:
+ *       type: object
+ *       properties:
+ *         requestId:
+ *           type: string
+ *           format: uuid
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *         deviceId:
+ *           type: string
+ *         deviceName:
+ *           type: string
+ *         deviceType:
+ *           type: string
+ *         readingCount:
+ *           type: integer
+ *         readings:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: integer
+ *               value:
+ *                 type: number
+ *               unit:
+ *                 type: string
+ *               readingType:
+ *                 type: string
+ *               timestamp:
+ *                 type: string
+ *                 format: date-time
+ */
+
+/**
+ * @swagger
+ * /readings:
+ *   get:
+ *     summary: Query historical sensor readings
+ *     description: >
+ *       Returns historical readings grouped by their submission requestId.
+ *       Supports filtering by device, date range, value range, and pagination.
+ *     tags: [Readings]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: deviceId
+ *         schema:
+ *           type: string
+ *         description: Filter by string device ID
+ *       - in: query
+ *         name: readingType
+ *         schema:
+ *           type: string
+ *         description: Filter by sensor type (e.g. temperature)
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Start of time range
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: End of time range
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Number of request groups per page
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *     responses:
+ *       200:
+ *         description: A paginated list of reading groups
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count:
+ *                   type: integer
+ *                 totalRequests:
+ *                   type: integer
+ *                 totalReadings:
+ *                   type: integer
+ *                 page:
+ *                   type: integer
+ *                 totalPages:
+ *                   type: integer
+ *                 requests:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReadingGroup'
+ *       500:
+ *         description: Server error
+ */
 router.get('/readings', authenticate, async (req, res) => {
   try {
     const { 
@@ -60,14 +177,45 @@ router.get('/readings', authenticate, async (req, res) => {
     const limitNum = parseInt(limit, 10);
     const offset = (pageNum - 1) * limitNum;
 
-    const readings = await Reading.findAll({
+    const validGroupSortFields = ['timestamp', 'readingCount'];
+    const groupSortField = validGroupSortFields.includes(sortBy) ? sortBy : 'timestamp';
+
+    const groupedRequestsPage = await Reading.findAll({
       where,
-      include: [{ model: Device, as: 'device' }],
-      order: [['timestamp', orderDirection]]
+      attributes: [
+        'requestId',
+        [Sequelize.fn('MAX', Sequelize.col('timestamp')), 'timestamp'],
+        [Sequelize.fn('COUNT', Sequelize.col('id')), 'readingCount']
+      ],
+      group: ['requestId'],
+      order: [[Sequelize.literal(groupSortField), orderDirection]],
+      limit: limitNum,
+      offset,
+      raw: true,
+      subQuery: false
     });
 
+    const [totalRequests, totalReadings] = await Promise.all([
+      Reading.count({ where, distinct: true, col: 'requestId' }),
+      Reading.count({ where })
+    ]);
+
+    const requestIds = groupedRequestsPage.map(group => group.requestId);
+
+    let readings = [];
+    if (requestIds.length > 0) {
+      readings = await Reading.findAll({
+        where: {
+          ...where,
+          requestId: { [Sequelize.Op.in]: requestIds }
+        },
+        include: [{ model: Device, as: 'device' }],
+        order: [['timestamp', orderDirection]]
+      });
+    }
+
     const groupedByRequestId = {};
-    
+
     readings.forEach(reading => {
       const reqId = reading.requestId;
       if (!groupedByRequestId[reqId]) {
@@ -91,26 +239,29 @@ router.get('/readings', authenticate, async (req, res) => {
       groupedByRequestId[reqId].readingCount++;
     });
 
-    let groupedRequests = Object.values(groupedByRequestId);
-    
-    const validGroupSortFields = ['timestamp', 'readingCount'];
-    if (validGroupSortFields.includes(sortBy)) {
-      const sortMultiplier = orderDirection === 'ASC' ? 1 : -1;
-      groupedRequests.sort((a, b) => {
-        if (a[sortBy] < b[sortBy]) return -sortMultiplier;
-        if (a[sortBy] > b[sortBy]) return sortMultiplier;
-        return 0;
-      });
-    }
+    const groupedRequests = groupedRequestsPage.map(group => {
+      const reqId = group.requestId;
+      const groupedRequest = groupedByRequestId[reqId] || {
+        requestId: reqId,
+        timestamp: group.timestamp,
+        deviceId: null,
+        deviceName: null,
+        deviceType: null,
+        readingCount: Number(group.readingCount) || 0,
+        readings: []
+      };
 
-    const totalRequests = groupedRequests.length;
+      groupedRequest.timestamp = group.timestamp;
+      groupedRequest.readingCount = Number(group.readingCount) || groupedRequest.readingCount;
+      return groupedRequest;
+    });
+
     const totalPages = Math.ceil(totalRequests / limitNum);
-    groupedRequests = groupedRequests.slice(offset, offset + limitNum);
 
     res.json({ 
       count: groupedRequests.length,
       totalRequests: totalRequests,
-      totalReadings: readings.length,
+      totalReadings,
       page: pageNum,
       totalPages,
       limit: limitNum,

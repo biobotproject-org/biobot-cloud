@@ -15,25 +15,18 @@ const authenticate = async (req, res, next) => {
     const token = authHeader.replace('Bearer ', '');
 
     if (token.startsWith('sk_')) {
-      const apiKeys = await ApiKey.findAll({
-        include: [{
-          model: User,
-          as: 'user'
-        }]
+
+      const prefix = token.substring(0, 8);
+      const candidate = await ApiKey.findOne({
+        where: { prefix },
+        include: [{ model: User, as: 'user' }]
       });
 
-      let matchedApiKey = null;
-      for (const apiKey of apiKeys) {
-        const isValid = await bcrypt.compare(token, apiKey.key);
-        if (isValid) {
-          matchedApiKey = apiKey;
-          break;
-        }
-      }
-
-      if (!matchedApiKey) {
+      if (!candidate || !(await bcrypt.compare(token, candidate.key))) {
         return res.status(401).json({ error: 'Invalid API key' });
       }
+
+      const matchedApiKey = candidate;
 
       // Update last used timestamp
       await matchedApiKey.update({ lastUsedAt: new Date() });

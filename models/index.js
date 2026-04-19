@@ -5,6 +5,7 @@ const Device = require('./Device');
 const Reading = require('./Reading');
 const Alert = require('./Alert');
 const AlertAcknowledgment = require('./AlertAcknowledgment');
+const AlertThreshold = require('./AlertThreshold');
 const PowerEvent = require('./PowerEvent');
 const ApiKey = require('./ApiKey');
 
@@ -36,6 +37,7 @@ module.exports = {
   Reading,
   Alert,
   AlertAcknowledgment,
+  AlertThreshold,
   PowerEvent,
   ApiKey
 };
