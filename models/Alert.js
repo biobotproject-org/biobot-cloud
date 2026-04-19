@@ -22,6 +22,11 @@ const Alert = sequelize.define('Alert', {
   triggeredAt: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
+  },
+  requestId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    comment: 'The UUID of the submission batch that triggered this alert'
   }
 });
 
