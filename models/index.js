@@ -12,6 +12,9 @@ const ApiKey = require('./ApiKey');
 Device.belongsTo(Location, { foreignKey: 'locationId', as: 'location' });
 Location.hasMany(Device, { foreignKey: 'locationId', as: 'devices' });
 
+User.hasMany(Device, { foreignKey: 'createdBy', as: 'devices' });
+Device.belongsTo(User, { foreignKey: 'createdBy', as: 'owner' });
+
 Device.hasMany(Reading, { foreignKey: 'deviceId', as: 'readings' });
 Reading.belongsTo(Device, { foreignKey: 'deviceId', as: 'device' });
 

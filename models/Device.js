@@ -28,6 +28,15 @@ const Device = sequelize.define('Device', {
   },
   lastSeen: {
     type: DataTypes.DATE
+  },
+  createdBy: {
+    type: DataTypes.INTEGER,
+    allowNull: true,  // nullable so existing rows without an owner still load
+    references: {
+      model: 'Users',
+      key: 'id'
+    },
+    onDelete: 'SET NULL'
   }
 });
 
