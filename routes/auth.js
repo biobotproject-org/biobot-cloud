@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { User, ApiKey } = require('../models');
+const { validateRegister, validateLogin, validateCreateApiKey } = require('../middleware/validate');
 const { JWT_SECRET, authenticate } = require('../middleware/authenticate');
 const router = express.Router();
 
@@ -157,12 +158,9 @@ const router = express.Router();
  *                 value:
  *                   error: "Validation error: username must be unique"
  */
-router.post('/register', async (req, res) => {
+router.post('/register', validateRegister, async (req, res) => {
   try {
     const { username, email, password } = req.body;
-    if (!username || !email || !password) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await User.create({
       username,
@@ -254,7 +252,7 @@ router.post('/register', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/login', async (req, res) => {
+router.post('/login', validateLogin, async (req, res) => {
   try {
     const { username, email, password } = req.body;
     if ((!username && !email) || !password) {
@@ -354,7 +352,7 @@ router.post('/login', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/api-keys', authenticate, async (req, res) => {
+router.post('/api-keys', authenticate, validateCreateApiKey, async (req, res) => {
   try {
     const { name, description } = req.body;
     if (!name) {
