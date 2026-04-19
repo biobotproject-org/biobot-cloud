@@ -4,6 +4,123 @@ const { Reading, Device } = require('../models');
 const { authenticate } = require('../middleware/authenticate');
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Readings
+ *   description: Historical sensor data retrieval
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     ReadingGroup:
+ *       type: object
+ *       properties:
+ *         requestId:
+ *           type: string
+ *           format: uuid
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *         deviceId:
+ *           type: string
+ *         deviceName:
+ *           type: string
+ *         deviceType:
+ *           type: string
+ *         readingCount:
+ *           type: integer
+ *         readings:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: integer
+ *               value:
+ *                 type: number
+ *               unit:
+ *                 type: string
+ *               readingType:
+ *                 type: string
+ *               timestamp:
+ *                 type: string
+ *                 format: date-time
+ */
+
+/**
+ * @swagger
+ * /readings:
+ *   get:
+ *     summary: Query historical sensor readings
+ *     description: >
+ *       Returns historical readings grouped by their submission requestId.
+ *       Supports filtering by device, date range, value range, and pagination.
+ *     tags: [Readings]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: deviceId
+ *         schema:
+ *           type: string
+ *         description: Filter by string device ID
+ *       - in: query
+ *         name: readingType
+ *         schema:
+ *           type: string
+ *         description: Filter by sensor type (e.g. temperature)
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Start of time range
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: End of time range
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Number of request groups per page
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *     responses:
+ *       200:
+ *         description: A paginated list of reading groups
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count:
+ *                   type: integer
+ *                 totalRequests:
+ *                   type: integer
+ *                 totalReadings:
+ *                   type: integer
+ *                 page:
+ *                   type: integer
+ *                 totalPages:
+ *                   type: integer
+ *                 requests:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ReadingGroup'
+ *       500:
+ *         description: Server error
+ */
 router.get('/readings', authenticate, async (req, res) => {
   try {
     const { 
