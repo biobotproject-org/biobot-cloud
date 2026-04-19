@@ -17,7 +17,6 @@ const sequelize = require('../config/database');
 const RETRY_DELAY_MS = 10_000;
 
 const DEFAULT_THRESHOLDS = [
-    // ── Temperature ──────────────────────────────────────────────────────────
     {
         readingType:    'temperature',
         operator:       '>',
@@ -35,7 +34,6 @@ const DEFAULT_THRESHOLDS = [
         enabled:        true
     },
 
-    // ── Humidity (low humidity accelerates fire spread) ───────────────────────
     {
         readingType:    'humidity',
         operator:       '<',
@@ -53,7 +51,6 @@ const DEFAULT_THRESHOLDS = [
         enabled:        true
     },
 
-    // ── Smoke ─────────────────────────────────────────────────────────────────
     {
         readingType:    'smoke',
         operator:       '>',
@@ -71,7 +68,6 @@ const DEFAULT_THRESHOLDS = [
         enabled:        true
     },
 
-    // ── CO (carbon monoxide) ──────────────────────────────────────────────────
     {
         readingType:    'co',
         operator:       '>',
