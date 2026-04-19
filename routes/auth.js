@@ -101,7 +101,8 @@ const router = express.Router();
  *       Creates a new user account. The password is hashed with bcrypt before
  *       storage and is never returned. On success a signed JWT (24 h expiry) is
  *       returned so the caller can immediately begin making authenticated requests
- *       without a separate login step. `role` defaults to `"user"` when omitted.
+ *       without a separate login step. All new accounts are assigned the `"user"`
+ *       role server-side; the `role` field is not accepted from the request body.
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -126,11 +127,6 @@ const router = express.Router();
  *                 format: password
  *                 minLength: 1
  *                 example: "S3cur3P@ss!"
- *               role:
- *                 type: string
- *                 enum: [user, admin]
- *                 description: Defaults to "user" when omitted.
- *                 example: "user"
  *     responses:
  *       201:
  *         description: User registered successfully. JWT included in response.
@@ -163,7 +159,7 @@ const router = express.Router();
  */
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password, role } = req.body;
+    const { username, email, password } = req.body;
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -172,7 +168,7 @@ router.post('/register', async (req, res) => {
       username,
       email,
       password: hashedPassword,
-      role: role || 'user'
+      role: 'user'  // always assigned server-side; callers cannot elevate their own role
     });
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '24h' });
     res.status(201).json({
@@ -186,6 +182,10 @@ router.post('/register', async (req, res) => {
       token
     });
   } catch (error) {
+    console.error('Registration error:', error);
+    if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ error: error.errors.map(e => e.message).join(', ') });
+    }
     res.status(400).json({ error: error.message });
   }
 });
@@ -367,6 +367,7 @@ router.post('/api-keys', authenticate, async (req, res) => {
       name,
       description,
       key: hashedApiKey,
+      prefix: apiKey.substring(0, 8),
       lastUsedAt: null
     });
     res.status(201).json({
