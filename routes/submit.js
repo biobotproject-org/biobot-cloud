@@ -355,7 +355,7 @@ router.post('/sensordata', authenticate, async (req, res) => {
         // "high" and a "critical" threshold for the same sensor type).
         for (const reading of readings) {
           const matchingThresholds = thresholds.filter(
-              t => t.readingType === reading.readingType
+              t => t.readingType.toLowerCase() === reading.readingType.toLowerCase()
           );
 
           for (const threshold of matchingThresholds) {
