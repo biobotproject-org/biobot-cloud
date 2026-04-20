@@ -79,7 +79,7 @@ sequelize.setDbReadyCallback(async (ready, alreadySynced) => {
       const count = await AlertThreshold.count();
       if (count === 0) {
         console.log(chalk.yellow(' No alert thresholds found. Running seeder...'));
-        const { seed } = require('./seeders/alert-thresholds-v2'); // We'll create a v2 seeder that exports seed
+        const { seed } = require('./seeders/alert-thresholds'); // Replaced v2 with merged seeder
         await seed();
       }
     } catch (err) {
