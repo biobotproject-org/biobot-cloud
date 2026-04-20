@@ -73,6 +73,15 @@ sequelize.setDbReadyCallback(async (ready, alreadySynced) => {
       await sequelize.sync({ alter: true });
       sequelize.setDbSynchronized();
       console.log(chalk.green(' Database synchronized.'));
+
+      // Auto-seed thresholds if the table is empty
+      const { AlertThreshold } = require('./models');
+      const count = await AlertThreshold.count();
+      if (count === 0) {
+        console.log(chalk.yellow(' No alert thresholds found. Running seeder...'));
+        const { seed } = require('./seeders/alert-thresholds-v2'); // We'll create a v2 seeder that exports seed
+        await seed();
+      }
     } catch (err) {
       console.error(chalk.red(` Database sync error: ${err.message}`));
     }
