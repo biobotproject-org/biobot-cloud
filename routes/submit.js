@@ -355,7 +355,7 @@ router.post('/sensordata', authenticate, validateSensorData, async (req, res) =>
         // Evaluate every reading against every matching enabled threshold.
         // A single reading can trigger multiple alerts (e.g. crossing both a
         // "high" and a "critical" threshold for the same sensor type).
-        for (const reading of readings) {
+        for (const reading of createdReadings) {
           const matchingThresholds = thresholds.filter(
               t => t.readingType.toLowerCase() === reading.readingType.toLowerCase()
           );

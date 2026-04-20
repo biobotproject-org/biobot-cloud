@@ -268,7 +268,8 @@ router.post('/devices', authenticate, validateCreateDevice, async (req, res) => 
       type,
       locationId: locationId || null,
       status: status || 'active',
-      lastSeen: new Date()
+      lastSeen: new Date(),
+      createdBy: req.user.id
     });
     res.status(201).json({
       message: 'Device created successfully.',
