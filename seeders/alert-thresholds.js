@@ -1,20 +1,8 @@
 /**
- * Seed: alert_thresholds
- *
- * Replicates the original hardcoded behaviour (temperature > 80 → high alert)
- * and adds sensible starting thresholds for a wildfire detection system.
- *
- * Existing rows are left untouched (findOrCreate on readingType + operator + thresholdValue).
- *
- * Usage:
- *   node seeders/alert-thresholds.js
+ * Seed: alert_thresholds (Exportable version for auto-seeding)
  */
 
-require('dotenv').config();
 const { AlertThreshold } = require('../models');
-const sequelize = require('../config/database');
-
-const RETRY_DELAY_MS = 10_000;
 
 const DEFAULT_THRESHOLDS = [
     {
@@ -86,10 +74,8 @@ const DEFAULT_THRESHOLDS = [
     }
 ];
 
-async function seed() {
+async function seed(sequelize = null) {
     try {
-        await sequelize.authenticate();
-
         let inserted = 0;
         let skipped  = 0;
 
@@ -106,12 +92,26 @@ async function seed() {
         }
 
         console.log(`[seed] alert_thresholds: ${inserted} inserted, ${skipped} already existed.`);
-        await sequelize.close();
     } catch (err) {
         console.error('[seed] Failed:', err.message);
-        console.log(`[seed] Retrying in ${RETRY_DELAY_MS / 1000} seconds...`);
-        setTimeout(seed, RETRY_DELAY_MS);
+        if (!sequelize) {
+            const RETRY_DELAY_MS = 10_000;
+            console.log(`[seed] Retrying in ${RETRY_DELAY_MS / 1000} seconds...`);
+            setTimeout(() => seed(), RETRY_DELAY_MS);
+        }
     }
 }
 
-seed();
+if (require.main === module) {
+    require('dotenv').config();
+    const sequelize = require('../config/database');
+    sequelize.authenticate()
+        .then(() => seed(sequelize))
+        .then(() => {
+            // We don't necessarily want to close here if it might still be retrying,
+            // but for a one-off run it's fine.
+            // process.exit(0);
+        });
+}
+
+module.exports = { seed };
