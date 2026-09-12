@@ -3,6 +3,7 @@ const router = express.Router();
 const { Op } = require('sequelize');
 const ApiHealth = require('../models/ApiHealth');
 const sequelize = require('../config/database');
+const { authenticate } = require('../middleware/authenticate');
 
 /**
  * @swagger
@@ -122,7 +123,7 @@ const sequelize = require('../config/database');
  *         description: Failed to fetch API health statistics
  */
 
-router.get('/api/health/stats', async (req, res) => {
+router.get('/api/health/stats', authenticate, async (req, res) => {
   try {
     const { timeRange = '24h' } = req.query;
     
@@ -254,7 +255,7 @@ router.get('/api/health/stats', async (req, res) => {
  *         description: Failed to fetch endpoint statistics
  */
 
-router.get('/api/health/endpoints', async (req, res) => {
+router.get('/api/health/endpoints', authenticate, async (req, res) => {
   try {
     const { timeRange = '24h' } = req.query;
     
@@ -392,7 +393,7 @@ router.get('/api/health/endpoints', async (req, res) => {
  *       500:
  *         description: Failed to fetch error data
  */
-router.get('/api/health/errors', async (req, res) => {
+router.get('/api/health/errors', authenticate, async (req, res) => {
   try {
     const { timeRange = '24h', limit = 50 } = req.query;
     
@@ -520,7 +521,7 @@ router.get('/api/health/errors', async (req, res) => {
  *         description: Failed to fetch latency trends
  */
 
-router.get('/api/health/latency-trends', async (req, res) => {
+router.get('/api/health/latency-trends', authenticate, async (req, res) => {
   try {
     const { timeRange = '24h', interval = 'hour' } = req.query;
     
