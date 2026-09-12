@@ -2,10 +2,14 @@ require('dotenv').config();
 const { Sequelize } = require('sequelize');
 const chalk = require('chalk');
 
+if (!process.env.DB_PASSWORD) {
+  throw new Error('DB_PASSWORD is not set. Add it to .env (see .env.example).');
+}
+
 const dbConfig = {
   name: process.env.DB_NAME || 'iot_monitoring',
   user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'password',
+  password: process.env.DB_PASSWORD,
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT) || 3306,
   showSql: process.env.SHOW_SQL === 'true',
