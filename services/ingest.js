@@ -45,6 +45,9 @@ function parseEnvelope(payload) {
   return {
     file,
     body,
+    // Notehub assigns every event a UUID and redelivers on any non-2xx or
+    // timeout, so the id is the key for making ingestion idempotent.
+    eventId: typeof payload.event === 'string' && payload.event ? payload.event.slice(0, 64) : null,
     notecardUid: typeof payload.device === 'string' ? payload.device : null,
     when: toDate(payload.when, toDate(payload.received)),
     latitude: Number.isFinite(Number(payload.best_lat)) ? Number(payload.best_lat) : null,
@@ -106,14 +109,20 @@ async function handleDataNote(env) {
   if (!requests) throw Object.assign(new Error('data.qo body must contain a "requests" array'), { status: 400 });
 
   const thresholds = await loadEnabledThresholds();
-  let stored = 0, alerts = 0;
+  let stored = 0, alerts = 0, duplicates = 0;
   const devices = new Set();
 
-  for (const request of requests) {
+  for (const [index, request] of requests.entries()) {
     if (!request || !Array.isArray(request.readings)) continue;
     const { device } = await findOrCreateDevice(request.deviceId, env);
     devices.add(device.deviceId);
-    const requestId = uuidv4();
+    // One requestId per batch entry. With a Notehub event id it is stable
+    // across redeliveries, so a repeat is detected and skipped.
+    const requestId = env.eventId ? `${env.eventId}:${index}` : uuidv4();
+    if (env.eventId && await Reading.count({ where: { requestId } }) > 0) {
+      duplicates++;
+      continue;
+    }
     const anomaly = (request.anomaly && typeof request.anomaly === 'object') ? request.anomaly : {};
     const severity = typeof anomaly.severity === 'string' ? anomaly.severity : null;
     const score = Number.isFinite(Number(anomaly.score)) ? Number(anomaly.score) : null;
@@ -143,7 +152,7 @@ async function handleDataNote(env) {
     const tripped = await evaluateThresholds(device, createdReadings, requestId, thresholds);
     alerts += tripped.length;
   }
-  return { action: 'readings_stored', readings: stored, thresholdAlerts: alerts, devices: [...devices] };
+  return { action: 'readings_stored', readings: stored, thresholdAlerts: alerts, duplicates, devices: [...devices] };
 }
 
 async function handleAlertNote(env, { baseUrl } = {}) {
@@ -156,6 +165,13 @@ async function handleAlertNote(env, { baseUrl } = {}) {
   const readings = (b.readings && typeof b.readings === 'object') ? b.readings : null;
   const baseline = (b.baseline && typeof b.baseline === 'object') ? b.baseline : null;
   const occurredAt = parseIsoOr(b.timestamp, env.when);
+
+  if (env.eventId) {
+    const seen = await IncidentEvent.findOne({ where: { notehubEventId: env.eventId } });
+    if (seen) {
+      return { action: 'duplicate_ignored', incidentId: seen.incidentId, event, severity, notified: false };
+    }
+  }
 
   const { device } = await findOrCreateDevice(b.deviceId, env);
   const deviceUpdates = envelopeUpdates(env, occurredAt);
@@ -209,6 +225,7 @@ async function handleAlertNote(env, { baseUrl } = {}) {
 
   const incidentEvent = await IncidentEvent.create({
     incidentId: incident.id, event, severity, score, signals, readings, baseline, occurredAt,
+    notehubEventId: env.eventId,
   });
 
   let notified = false;

@@ -29,12 +29,21 @@ const IncidentEvent = sequelize.define('IncidentEvent', {
     type: DataTypes.DATE,
     allowNull: false
   },
+  notehubEventId: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    comment: 'Notehub event UUID, used to ignore redeliveries'
+  },
   notified: {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: false,
     comment: 'Whether a notification was sent for this event'
   }
+}, {
+  indexes: [
+    { fields: ['notehubEventId'] }
+  ]
 });
 
 module.exports = IncidentEvent;

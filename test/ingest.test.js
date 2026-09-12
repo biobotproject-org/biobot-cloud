@@ -53,10 +53,13 @@ async function get(path, headers = {}) {
 }
 const NH = { authorization: 'Bearer nh-test-token' };
 
-// A Notehub JSON route envelope, trimmed to the fields that matter.
+// A Notehub JSON route envelope, trimmed to the fields that matter. Every
+// call gets a fresh event id, as Notehub would assign; pass extra.event to
+// simulate a redelivery of the same event.
+let eventCounter = 0;
 function envelope(file, body, extra = {}) {
   return {
-    event: 'evt-1', session: 'ses-1', device: 'dev:864475046123456', sn: 'node-kelowna-01',
+    event: `evt-${++eventCounter}`, session: 'ses-1', device: 'dev:864475046123456', sn: 'node-kelowna-01',
     product: 'com.example:biobot', req: 'note.add', received: 1757700000.5, when: 1757700000,
     file, body, best_location_type: 'triangulated', best_lat: 49.887, best_lon: -119.496,
     best_location: 'Kelowna BC', voltage: 4.97, temp: 23.5, ...extra,
@@ -192,6 +195,49 @@ test('a cleared with nothing open is recorded as an already-closed incident', as
   assert.equal(r.body.action, 'incident_closed_unmatched');
   const inc = await models.Incident.findByPk(r.body.incidentId);
   assert.equal(inc.status, 'closed');
+});
+
+test('a redelivered data.qo is stored once', async () => {
+  const note = envelope('data.qo', { requests: [{ deviceId: 'biobot-001', readings: readings(), anomaly: { severity: 'none', score: 0 } }] }, { event: 'evt-redelivered-data' });
+  const first = await post('/ingest/notehub', note, NH);
+  assert.equal(first.status, 200);
+  assert.equal(first.body.readings, 8);
+  assert.equal(first.body.duplicates, 0);
+  const before = await models.Reading.count();
+
+  const again = await post('/ingest/notehub', note, NH);
+  assert.equal(again.status, 200);
+  assert.equal(again.body.readings, 0);
+  assert.equal(again.body.duplicates, 1);
+  assert.equal(await models.Reading.count(), before);
+});
+
+test('a redelivered alert.qo does not reopen, re-escalate, or re-email', async () => {
+  notify._reset();
+  const raise = envelope('alert.qo', {
+    request_type: 'anomaly', deviceId: 'biobot-001', event: 'raised', severity: 'alert', score: 2,
+    signals: ['pm25_elevated', 'gas_resistance_drop'], timestamp: '2026-09-12T19:00:00Z',
+    readings: { pm25: 41, gasResistance: 50 }, baseline: { pm25: 4, gasResistance: 118 },
+  }, { event: 'evt-redelivered-alert' });
+  const first = await post('/ingest/notehub', raise, NH);
+  assert.equal(first.status, 200);
+  assert.equal(first.body.action, 'incident_opened');
+  const emailsAfterFirst = notify._sentMessages().length;
+  const eventsBefore = await models.IncidentEvent.count();
+
+  const again = await post('/ingest/notehub', raise, NH);
+  assert.equal(again.status, 200);
+  assert.equal(again.body.action, 'duplicate_ignored');
+  assert.equal(again.body.incidentId, first.body.incidentId);
+  assert.equal(again.body.notified, false);
+  assert.equal(await models.IncidentEvent.count(), eventsBefore);
+  assert.equal(notify._sentMessages().length, emailsAfterFirst);
+  assert.equal(await models.Incident.count({ where: { status: 'open' } }), 1);
+
+  // Close it so later tests start clean.
+  const clear = envelope('alert.qo', { request_type: 'anomaly', deviceId: 'biobot-001', event: 'cleared', severity: 'none', score: 0, signals: [], timestamp: '2026-09-12T19:30:00Z' });
+  const closed = await post('/ingest/notehub', clear, NH);
+  assert.equal(closed.body.action, 'incident_closed');
 });
 
 test('a bad event name is rejected', async () => {

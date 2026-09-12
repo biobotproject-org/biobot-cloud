@@ -43,6 +43,11 @@ What each note does on arrival:
 Every envelope also updates the node's last-seen time, location
 (`best_lat` / `best_lon`), and Notecard supply voltage.
 
+Notehub redelivers an event whenever the route does not answer 2xx in
+time. The server keys each delivery on Notehub's event id, so a repeat of
+a `data.qo` stores nothing new and a repeat of an `alert.qo` neither
+reopens the incident nor sends another email.
+
 ## Incident notifications
 
 Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_FROM`
