@@ -27,6 +27,15 @@ const Reading = sequelize.define('Reading', {
     type: DataTypes.STRING(100),
     allowNull: true,
     comment: 'Request ID for tracking and lookup'
+  },
+  anomalySeverity: {
+    type: DataTypes.STRING(16),
+    allowNull: true,
+    comment: 'On-device anomaly severity at the time of this sample'
+  },
+  anomalyScore: {
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 });
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { Device, Reading, Alert, AlertThreshold } = require('../models');
+const { Device, Reading } = require('../models');
+const { loadEnabledThresholds, evaluateThresholds } = require('../services/thresholds');
 const { authenticate } = require('../middleware/authenticate');
 const { authorizeDevice } = require('../middleware/authorizeDevice');
 const { validateSensorData } = require('../middleware/validate');
@@ -275,27 +276,11 @@ const router = express.Router();
  * Evaluate a single reading value against a threshold operator.
  * Returns true if the reading satisfies the threshold condition.
  */
-function exceedsThreshold(readingValue, operator, thresholdValue) {
-  const v = parseFloat(readingValue);
-  const t = parseFloat(thresholdValue);
-  switch (operator) {
-    case '>':  return v > t;
-    case '>=': return v >= t;
-    case '<':  return v < t;
-    case '<=': return v <= t;
-    default:   return false;
-  }
-}
 
 /**
  * Interpolate {value} and {unit} tokens in a threshold message template.
  * Example: "High temperature detected: {value}{unit}" → "High temperature detected: 95°C"
  */
-function formatMessage(template, value, unit) {
-  return template
-      .replace('{value}', value)
-      .replace('{unit}', unit ?? '');
-}
 
 router.post('/sensordata', authenticate, validateSensorData, async (req, res) => {
   try {
@@ -309,7 +294,7 @@ router.post('/sensordata', authenticate, validateSensorData, async (req, res) =>
 
     // Load all enabled thresholds once per batch — the table is small and
     // thresholds are shared across all readings in this request.
-    const thresholds = await AlertThreshold.findAll({ where: { enabled: true } });
+    const thresholds = await loadEnabledThresholds();
 
     const results = [];
 
@@ -353,25 +338,7 @@ router.post('/sensordata', authenticate, validateSensorData, async (req, res) =>
         );
 
         // Evaluate every reading against every matching enabled threshold.
-        // A single reading can trigger multiple alerts (e.g. crossing both a
-        // "high" and a "critical" threshold for the same sensor type).
-        for (const reading of createdReadings) {
-          const matchingThresholds = thresholds.filter(
-              t => t.readingType.toLowerCase() === reading.readingType.toLowerCase()
-          );
-
-          for (const threshold of matchingThresholds) {
-            if (exceedsThreshold(reading.value, threshold.operator, threshold.thresholdValue)) {
-              await Alert.create({
-                deviceId: device.id,
-                severity: threshold.severity,
-                message: formatMessage(threshold.message, reading.value, reading.unit),
-                triggeredAt: new Date(),
-                requestId
-              });
-            }
-          }
-        }
+        await evaluateThresholds(device, createdReadings, requestId, thresholds);
 
         results.push({
           requestId,
