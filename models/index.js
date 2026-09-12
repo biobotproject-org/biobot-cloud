@@ -8,6 +8,8 @@ const AlertAcknowledgment = require('./AlertAcknowledgment');
 const AlertThreshold = require('./AlertThreshold');
 const PowerEvent = require('./PowerEvent');
 const ApiKey = require('./ApiKey');
+const Incident = require('./Incident');
+const IncidentEvent = require('./IncidentEvent');
 
 Device.belongsTo(Location, { foreignKey: 'locationId', as: 'location' });
 Location.hasMany(Device, { foreignKey: 'locationId', as: 'devices' });
@@ -33,6 +35,17 @@ PowerEvent.belongsTo(Location, { foreignKey: 'locationId', as: 'location' });
 User.hasMany(ApiKey, { foreignKey: 'userId', as: 'apiKeys', onDelete: 'CASCADE' });
 ApiKey.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
+Device.hasMany(Incident, { foreignKey: 'deviceId', as: 'incidents' });
+Incident.belongsTo(Device, { foreignKey: 'deviceId', as: 'device' });
+
+Incident.hasMany(IncidentEvent, { foreignKey: 'incidentId', as: 'events', onDelete: 'CASCADE' });
+IncidentEvent.belongsTo(Incident, { foreignKey: 'incidentId', as: 'incident' });
+
+Incident.belongsTo(Alert, { foreignKey: 'alertId', as: 'alert' });
+
+User.hasMany(Incident, { foreignKey: 'acknowledgedBy', as: 'acknowledgedIncidents' });
+Incident.belongsTo(User, { foreignKey: 'acknowledgedBy', as: 'acknowledger' });
+
 module.exports = {
   User,
   Location,
@@ -42,5 +55,7 @@ module.exports = {
   AlertAcknowledgment,
   AlertThreshold,
   PowerEvent,
-  ApiKey
+  ApiKey,
+  Incident,
+  IncidentEvent
 };
