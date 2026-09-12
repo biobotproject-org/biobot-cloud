@@ -1,6 +1,7 @@
 const express = require('express');
 const { Device, Location, Reading } = require('../models');
 const { authenticate } = require('../middleware/authenticate');
+const { authorizeDevice } = require('../middleware/authorizeDevice');
 const { validateCreateDevice, validatePatchDeviceStatus } = require('../middleware/validate');
 const router = express.Router();
 
@@ -331,7 +332,7 @@ router.post('/devices', authenticate, validateCreateDevice, async (req, res) => 
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.delete('/devices/:id', authenticate, async (req, res) => {
+router.delete('/devices/:id', authenticate, authorizeDevice('id'), async (req, res) => {
   try {
     const { id } = req.params;
     const device = await Device.findByPk(id);
@@ -429,7 +430,7 @@ router.delete('/devices/:id', authenticate, async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.patch('/devices/:id/status', authenticate, validatePatchDeviceStatus, async (req, res) => {
+router.patch('/devices/:id/status', authenticate, authorizeDevice('id'), validatePatchDeviceStatus, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
