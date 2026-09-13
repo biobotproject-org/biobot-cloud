@@ -34,8 +34,10 @@ if (require.main === module) {
     console.log(chalk.yellow(`✓ Server running at:      ${chalk.bold(`http://localhost:${PORT}`)}`));
     console.log(chalk.cyan(`✓ API Health Dashboard:   ${chalk.bold(`http://localhost:${PORT}/api/health/stats`)}`));
     console.log(chalk.magenta(`✓ API Docs:               ${chalk.bold(`http://localhost:${PORT}/api-docs`)}`));
-    if (!process.env.NOTEHUB_INGEST_TOKEN) {
-      console.log(chalk.red('! NOTEHUB_INGEST_TOKEN is not set: /ingest/notehub will refuse every request.'));
+    if (process.env.NOTEHUB_INGEST_TOKEN) {
+      console.log(chalk.yellow('! NOTEHUB_INGEST_TOKEN is set (legacy). Prefer an ingest key created in the dashboard.'));
+    } else {
+      console.log(chalk.cyan('  /ingest/notehub accepts ingest-scoped API keys created in the dashboard.'));
     }
     if (!notify.isConfigured()) {
       console.log(chalk.yellow('! Email is not configured (SMTP_HOST / ALERT_EMAIL_TO): incident notifications will be skipped.'));

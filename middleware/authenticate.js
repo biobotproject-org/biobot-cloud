@@ -29,6 +29,14 @@ const authenticate = async (req, res, next) => {
         return res.status(401).json({ error: 'Invalid API key' });
       }
 
+      // Ingest keys exist only to let a Notehub route reach
+      // POST /ingest/notehub. They never act as a user anywhere else.
+      if (candidate.scope === 'ingest') {
+        return res.status(401).json({
+          error: 'This key has ingest scope and can only be used by a Notehub route on POST /ingest/notehub. Use a dashboard key or sign in.'
+        });
+      }
+
       const matchedApiKey = candidate;
 
       // Update last used timestamp
