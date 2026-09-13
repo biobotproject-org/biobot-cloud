@@ -331,6 +331,30 @@ test('incidents API lists, shows the timeline, and records the drive-out outcome
   assert.equal(missing.status, 404);
 });
 
+test('GET /devices/:id resolves both the numeric id and the string deviceId', async () => {
+  const reg = await post('/register', { username: 'devreader', email: 'devreader@example.com', password: 'Str0ngPassw0rd!' });
+  assert.equal(reg.status, 201, JSON.stringify(reg.body));
+  const auth = { authorization: `Bearer ${reg.body.token}` };
+  await post('/ingest/notehub', envelope('device.qo', DEVICE_QO), NH);
+  const row = await models.Device.findOne({ where: { deviceId: 'biobot-001' } });
+
+  const byPk = await get(`/devices/${row.id}`, auth);
+  assert.equal(byPk.status, 200);
+  assert.equal(byPk.body.device.deviceId, 'biobot-001');
+  assert.equal(byPk.body.device.name, 'Knox Mountain');
+
+  const byDeviceId = await get('/devices/biobot-001', auth);
+  assert.equal(byDeviceId.status, 200);
+  assert.equal(byDeviceId.body.device.id, row.id);
+
+  const missing = await get('/devices/biobot-does-not-exist', auth);
+  assert.equal(missing.status, 404);
+  const missingPk = await get('/devices/999999', auth);
+  assert.equal(missingPk.status, 404);
+  const noAuth = await get(`/devices/${row.id}`);
+  assert.equal(noAuth.status, 401);
+});
+
 test('legacy /sensordata still evaluates thresholds after the refactor', async () => {
   const reg = await post('/register', { username: 'legacy', email: 'legacy@example.com', password: 'Str0ngPassw0rd!' });
   const auth = { authorization: `Bearer ${reg.body.token}` };
