@@ -13,7 +13,7 @@ way Notehub does and replays a full node lifecycle against a local API:
   5. data.qo     redelivery of step 3 with the same event id -> must store nothing
   6. alert.qo    redelivery of the "raised" event -> must not reopen the incident
   7. bad token   -> 401
-  8. _health.qo  Notehub system file -> acknowledged, only refreshes lastSeen
+  8. _health.qo  Notehub system file -> acknowledged, refreshes lastSeen and voltage
 
 With --leave-open the run stops after step 4b ("updated -> critical") and
 leaves the incident OPEN, which is what you want when working on the
@@ -227,15 +227,18 @@ def main():
          envelope("data.qo", {"requests": []}, device_uid=uid), expect_status=401, token="not-the-token")
 
     # 8. Notehub system file
-    step("8. _health.qo system file -> acknowledged, lastSeen/voltage refreshed only",
-         envelope("_health.qo", {"text": "boot"}, device_uid=uid, voltage=4.61), expect_status=200)
+    health = envelope("_health.qo", {"method": "boot", "text": "boot (brown-out & hard reset [10020])",
+                                     "voltage": 4.61, "voltage_mode": "usb"}, device_uid=uid)
+    del health["voltage"]  # live Notehub envelopes carry no top-level voltage
+    step("8. _health.qo system file -> acknowledged, lastSeen refreshed, voltage taken from body",
+         health, expect={"action": "ignored"})
 
     print(f"\n{'ALL PASSED' if FAILS == 0 else f'{FAILS} FAILED'}")
     print("\nExpected in the dashboard (http://localhost) and Swagger (http://localhost:3000/api-docs):")
     print(f"  Devices    -> {dev} '{args.name}' listed with coordinates and a populated 'last seen'")
     print("  Device page -> raw sensor table shows the last 5 pm25 samples (38-42) with a WATCH badge")
-    print(f"  Incidents  -> GET /incidents?deviceId={dev} (JWT) shows one closed incident, peak CRITICAL,")
-    print("                outcome 'unknown' until a host acknowledges it")
+    print("  Incidents  -> one closed incident for this node under 'Recent closed', peak CRITICAL,")
+    print("                outcome 'unknown' until a host records one on the incident page")
     print("  Alerts     -> legacy Alert row, severity 'high' (mapped from 'alert'), status resolved")
     sys.exit(1 if FAILS else 0)
 

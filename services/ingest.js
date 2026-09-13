@@ -13,7 +13,8 @@ const notify = require('./notify');
 //   received   unix seconds when Notehub received it
 //   best_lat   } best known location: GPS, or tower/triangulation fallback
 //   best_lon   }
-//   voltage    Notecard supply voltage
+//   voltage    Notecard supply voltage (legacy; live Notehub omits it and
+//              reports voltage in the body of _health.qo instead)
 //
 // The node's own JSON is inside `body`; see the firmware README.
 
@@ -242,11 +243,25 @@ async function handleAlertNote(env, { baseUrl } = {}) {
 
 // Notehub system files (_session.qo, _health.qo, _track.qo, ...) and any
 // file this server does not understand. Still refresh device location and
-// voltage when the envelope names a node we know.
+// voltage when the envelope names a node we know; an unknown Notecard UID
+// creates nothing.
+//
+// Live Notehub envelopes carry no top-level `voltage`. Supply voltage comes
+// in the body of _health.qo, e.g.
+//   {"method":"boot","text":"...","voltage":4.34,"voltage_mode":"usb"}
+// so that is the primary source; an envelope `voltage` (older routes, the
+// simulator) is kept as the fallback.
 async function handleOtherNote(env) {
   if (env.notecardUid) {
     const device = await Device.findOne({ where: { notecardUid: env.notecardUid } });
-    if (device) await device.update(envelopeUpdates(env, env.when));
+    if (device) {
+      const updates = envelopeUpdates(env, env.when);
+      if (env.file === '_health.qo') {
+        const v = Number(env.body.voltage);
+        if (Number.isFinite(v)) updates.lastVoltage = v;
+      }
+      await device.update(updates);
+    }
   }
   return { action: 'ignored' };
 }

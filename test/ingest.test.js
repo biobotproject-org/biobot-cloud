@@ -283,6 +283,36 @@ test('Notehub system files are acknowledged and still refresh a known node', asy
   assert.equal(d.lastSeen.getTime(), 1757703600 * 1000);
 });
 
+test('_health.qo stores body.voltage on the node matched by Notecard UID', async () => {
+  await post('/ingest/notehub', envelope('device.qo', DEVICE_QO), NH);
+  const health = { method: 'boot', text: 'boot (brown-out & hard reset [10020])', voltage: 4.34, voltage_mode: 'usb' };
+  // Real envelopes have no top-level voltage; make sure the body is the source.
+  const env = envelope('_health.qo', health, { when: 1757707200 });
+  delete env.voltage;
+  const r = await post('/ingest/notehub', env, NH);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.action, 'ignored');
+  const d = await models.Device.findOne({ where: { deviceId: 'biobot-001' } });
+  assert.equal(Number(d.lastVoltage), 4.34);
+  assert.equal(d.lastSeen.getTime(), 1757707200 * 1000);
+
+  // Envelope voltage is still the fallback when the body has none.
+  const r2 = await post('/ingest/notehub', envelope('_health.qo', { method: 'periodic', text: 'ok' }, { voltage: 3.9 }), NH);
+  assert.equal(r2.status, 200);
+  assert.equal(Number((await d.reload()).lastVoltage), 3.9);
+
+  // Non-numeric body voltage is ignored, not stored as NaN.
+  await post('/ingest/notehub', envelope('_health.qo', { voltage: 'n/a' }, { voltage: 4.1 }), NH);
+  assert.equal(Number((await d.reload()).lastVoltage), 4.1);
+
+  // An unknown Notecard UID is acknowledged and creates nothing.
+  const before = await models.Device.count();
+  const r3 = await post('/ingest/notehub', envelope('_health.qo', health, { device: 'dev:000000000000000' }), NH);
+  assert.equal(r3.status, 200);
+  assert.equal(r3.body.action, 'ignored');
+  assert.equal(await models.Device.count(), before);
+});
+
 test('emails are skipped, not fatal, when no recipient is configured', async () => {
   const saved = process.env.ALERT_EMAIL_TO;
   process.env.ALERT_EMAIL_TO = '';
