@@ -43,7 +43,11 @@ function authenticateNotehub(req, res, next) {
  *       The body is Notehub's JSON event envelope. The server dispatches on
  *       the `file` field: `device.qo` registers or updates a node, `data.qo`
  *       stores readings, `alert.qo` opens, updates, or closes an incident and
- *       sends notifications. Other files are acknowledged and ignored.
+ *       sends notifications. Other files are acknowledged and ignored, except
+ *       that `_health.qo` also stores `body.voltage` as the node's supply
+ *       voltage (live Notehub envelopes carry no top-level `voltage`); an
+ *       envelope `voltage` is still honoured as a fallback. Unknown Notecard
+ *       UIDs on system files create nothing.
  *     tags: [Ingest]
  *     requestBody:
  *       required: true
