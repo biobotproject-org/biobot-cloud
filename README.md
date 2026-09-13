@@ -48,6 +48,24 @@ time. The server keys each delivery on Notehub's event id, so a repeat of
 a `data.qo` stores nothing new and a repeat of an `alert.qo` neither
 reopens the incident nor sends another email.
 
+## Simulating a node
+
+`scripts/notehub-sim.py` (Python 3, standard library only) builds Notehub
+event envelopes the way Notehub does and replays a full node lifecycle
+against a running API: registration, two `data.qo` batches, an incident
+that is raised, escalated, de-escalated and cleared, redeliveries of both
+a data and an alert event, a bad token, and a `_health.qo` system file.
+Every step prints OK or FAIL against the expected response.
+
+```sh
+INGEST_TOKEN=<ingest key or NOTEHUB_INGEST_TOKEN> python3 scripts/notehub-sim.py --device biobot-002 --name "Dilworth Ridge"
+INGEST_TOKEN=... python3 scripts/notehub-sim.py --device biobot-003 --name "Kalamoir" --leave-open
+```
+
+`--leave-open` stops after the escalation to critical and leaves the
+incident open, which is useful when working on the incident pages.
+`API_URL` overrides the default `http://localhost:3000`.
+
 ## Incident notifications
 
 Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_FROM`
