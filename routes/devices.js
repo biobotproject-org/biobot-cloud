@@ -284,6 +284,73 @@ router.post('/devices', authenticate, validateCreateDevice, async (req, res) => 
 /**
  * @swagger
  * /devices/{id}:
+ *   get:
+ *     summary: Get one device
+ *     description: >
+ *       Returns a single device with its location. `id` is either the numeric
+ *       primary key (all digits) or the node's string `deviceId`, so both
+ *       `/devices/42` and `/devices/biobot-001` work.
+ *     tags: [Devices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Numeric primary key, or the string deviceId.
+ *         example: biobot-001
+ *     responses:
+ *       200:
+ *         description: The device.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 device:
+ *                   $ref: '#/components/schemas/Device'
+ *       401:
+ *         description: Unauthorized — missing or invalid authentication token.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: No device with that id or deviceId.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Device not found."
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.get('/devices/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const include = [{ model: Location, as: 'location' }];
+    const device = /^\d+$/.test(id)
+      ? await Device.findByPk(id, { include })
+      : await Device.findOne({ where: { deviceId: id }, include });
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found.' });
+    }
+    res.json({ device });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /devices/{id}:
  *   delete:
  *     summary: Delete a device and all its readings
  *     description: >
