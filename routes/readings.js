@@ -2,6 +2,7 @@ const express = require('express');
 const { Sequelize } = require('sequelize');
 const { Reading, Device } = require('../models');
 const { authenticate } = require('../middleware/authenticate');
+const { maxSeverity } = require('../services/severity');
 const router = express.Router();
 
 /**
@@ -32,6 +33,11 @@ const router = express.Router();
  *           type: string
  *         readingCount:
  *           type: integer
+ *         anomalySeverity:
+ *           type: string
+ *           nullable: true
+ *           enum: [none, watch, alert, critical, fault]
+ *           description: Highest on-device anomaly severity among the group's readings
  *         readings:
  *           type: array
  *           items:
@@ -48,6 +54,15 @@ const router = express.Router();
  *               timestamp:
  *                 type: string
  *                 format: date-time
+ *               anomalySeverity:
+ *                 type: string
+ *                 nullable: true
+ *                 enum: [none, watch, alert, critical, fault]
+ *                 description: On-device anomaly severity at the time of this sample
+ *               anomalyScore:
+ *                 type: integer
+ *                 nullable: true
+ *                 description: On-device anomaly score at the time of this sample
  */
 
 /**
@@ -226,6 +241,7 @@ router.get('/readings', authenticate, async (req, res) => {
           deviceName: reading.device?.name,
           deviceType: reading.device?.type,
           readingCount: 0,
+          anomalySeverity: null,
           readings: []
         };
       }
@@ -234,8 +250,11 @@ router.get('/readings', authenticate, async (req, res) => {
         value: reading.value,
         unit: reading.unit,
         readingType: reading.readingType,
-        timestamp: reading.timestamp
+        timestamp: reading.timestamp,
+        anomalySeverity: reading.anomalySeverity,
+        anomalyScore: reading.anomalyScore
       });
+      groupedByRequestId[reqId].anomalySeverity = maxSeverity(groupedByRequestId[reqId].anomalySeverity, reading.anomalySeverity);
       groupedByRequestId[reqId].readingCount++;
     });
 
@@ -248,6 +267,7 @@ router.get('/readings', authenticate, async (req, res) => {
         deviceName: null,
         deviceType: null,
         readingCount: Number(group.readingCount) || 0,
+        anomalySeverity: null,
         readings: []
       };
 
