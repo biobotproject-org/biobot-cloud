@@ -17,7 +17,7 @@ const notify = require('./notify');
 //
 // The node's own JSON is inside `body`; see the firmware README.
 
-const SEVERITY_RANK = { none: 0, watch: 1, alert: 2, critical: 3, fault: 2 };
+const { SEVERITY_RANK } = require('./severity');
 const ACTIVE_SEVERITIES = new Set(['alert', 'critical', 'fault']);
 
 // Map the node's severity onto the legacy Alert table so the current

@@ -122,6 +122,34 @@ test('data.qo stores every reading with its anomaly tag and updates the node', a
   assert.equal(rows[1].timestamp.toISOString(), '2026-09-12T18:00:00.000Z');
 });
 
+test('GET /readings exposes per-reading and per-group anomaly fields', async () => {
+  const reg = await post('/register', { username: 'viewer', email: 'viewer@example.com', password: 'Str0ngPassw0rd!' });
+  assert.equal(reg.status, 201, JSON.stringify(reg.body));
+  const auth = { authorization: `Bearer ${reg.body.token}` };
+
+  const body = { requests: [
+    { deviceId: 'biobot-001', readings: readings(), anomaly: { severity: 'none', score: 0 } },
+    { deviceId: 'biobot-001', readings: readings({ pm25: 41.0 }), anomaly: { severity: 'watch', score: 1 } },
+  ] };
+  const stored = await post('/ingest/notehub', envelope('data.qo', body, { event: 'evt-readings-api' }), NH);
+  assert.equal(stored.status, 200);
+
+  const r = await get('/readings?deviceId=biobot-001', auth);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.requests.length, 2);
+  const watchGroup = r.body.requests.find(g => g.requestId === 'evt-readings-api:1');
+  const noneGroup = r.body.requests.find(g => g.requestId === 'evt-readings-api:0');
+  assert.ok(watchGroup && noneGroup, 'both request groups returned');
+  assert.equal(watchGroup.anomalySeverity, 'watch');
+  assert.equal(watchGroup.readings.length, 8);
+  for (const reading of watchGroup.readings) {
+    assert.equal(reading.anomalySeverity, 'watch');
+    assert.equal(reading.anomalyScore, 1);
+  }
+  assert.equal(noneGroup.anomalySeverity, 'none');
+  assert.equal(noneGroup.readings[0].anomalyScore, 0);
+});
+
 test('data.qo without a requests array is a 400, not a crash', async () => {
   const r = await post('/ingest/notehub', envelope('data.qo', { readings: [] }), NH);
   assert.equal(r.status, 400);
