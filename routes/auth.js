@@ -72,6 +72,14 @@ const router = express.Router();
  *           format: date-time
  *           nullable: true
  *           example: "2026-04-16T11:22:00.000Z"
+ *         scope:
+ *           type: string
+ *           enum: [user, ingest]
+ *           description: >
+ *             `user` keys act as the owning user across the API. `ingest` keys
+ *             are accepted only by `POST /ingest/notehub` and are rejected
+ *             everywhere else.
+ *           example: user
  *
  *     ApiKeyCreated:
  *       allOf:
@@ -315,6 +323,14 @@ router.post('/login', validateLogin, async (req, res) => {
  *                 nullable: true
  *                 description: Optional longer description of the key's purpose.
  *                 example: "Used by the production data pipeline"
+ *               scope:
+ *                 type: string
+ *                 enum: [user, ingest]
+ *                 default: user
+ *                 description: >
+ *                   `ingest` creates a key that Notehub routes present as the
+ *                   Bearer token; it can only deliver sensor data to
+ *                   `POST /ingest/notehub` and cannot read or change anything.
  *     responses:
  *       201:
  *         description: API key created. The raw key value is included — save it now.
@@ -355,6 +371,7 @@ router.post('/login', validateLogin, async (req, res) => {
 router.post('/api-keys', authenticate, validateCreateApiKey, async (req, res) => {
   try {
     const { name, description } = req.body;
+    const scope = req.body.scope === 'ingest' ? 'ingest' : 'user';
     if (!name) {
       return res.status(400).json({ error: 'API key name is required' });
     }
@@ -364,6 +381,7 @@ router.post('/api-keys', authenticate, validateCreateApiKey, async (req, res) =>
       userId: req.user.id,
       name,
       description,
+      scope,
       key: hashedApiKey,
       prefix: apiKey.substring(0, 8),
       lastUsedAt: null
@@ -374,6 +392,8 @@ router.post('/api-keys', authenticate, validateCreateApiKey, async (req, res) =>
         id: apiKeyRecord.id,
         name: apiKeyRecord.name,
         description: apiKeyRecord.description,
+        scope: apiKeyRecord.scope,
+        lastUsedAt: apiKeyRecord.lastUsedAt,
         key: apiKey,
         createdAt: apiKeyRecord.createdAt
       },
@@ -425,7 +445,7 @@ router.get('/api-keys', authenticate, async (req, res) => {
   try {
     const apiKeys = await ApiKey.findAll({
       where: { userId: req.user.id },
-      attributes: ['id', 'name', 'description', 'createdAt', 'lastUsedAt'],
+      attributes: ['id', 'name', 'description', 'scope', 'createdAt', 'lastUsedAt'],
       order: [['createdAt', 'DESC']]
     });
     res.status(200).json({

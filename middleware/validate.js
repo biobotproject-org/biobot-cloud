@@ -84,6 +84,9 @@ const validateLogin = [
 const validateCreateApiKey = [
     safeName('name', 100),
     optionalSafeText('description', 500),
+    body('scope')
+        .optional()
+        .isIn(['user', 'ingest']).withMessage('scope must be "user" or "ingest"'),
     handleValidationErrors
 ];
 

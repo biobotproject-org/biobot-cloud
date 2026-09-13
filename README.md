@@ -20,12 +20,16 @@ Swagger UI is served at `/api-docs`. The server refuses to start if
 Sensor nodes talk to Blues Notehub over cellular. Notehub forwards each
 note to this API through a route. Set it up once per Notehub project:
 
-1. Generate a token and put it in `.env` as `NOTEHUB_INGEST_TOKEN`:
-   `openssl rand -hex 32`
+1. In the dashboard open **API Keys**, **New key**, choose scope
+   **Notehub ingest**, and copy the key once it is shown. An ingest key can
+   only deliver sensor data to `POST /ingest/notehub`; it cannot read or
+   change anything, and the API Keys page shows when it was last used.
+   (Legacy fallback: a static `NOTEHUB_INGEST_TOKEN` in `.env` still
+   works and logs a deprecation warning once per process.)
 2. In Notehub, open the project, then **Routes**, then **Create Route**,
    type **General HTTP/HTTPS Request/Response**.
 3. URL: `https://your-api-host/ingest/notehub`
-4. HTTP headers: add `Authorization` with the value `Bearer <your token>`.
+4. HTTP headers: add `Authorization` with the value `Bearer <your ingest key>`.
 5. Notefiles: **Select Notefiles** and choose `device.qo`, `data.qo`, and
    `alert.qo`. Leaving it on all files also works; the server acknowledges
    and ignores Notehub's system files.

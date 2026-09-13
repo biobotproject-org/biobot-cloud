@@ -1,6 +1,6 @@
 const express = require('express');
-const crypto = require('crypto');
 const { ingest } = require('../services/ingest');
+const { authenticateIngestCredential } = require('../services/ingestKeys');
 const router = express.Router();
 
 /**
@@ -10,26 +10,21 @@ const router = express.Router();
  *   description: Endpoint that Blues Notehub routes deliver sensor-node notes to
  */
 
-// Notehub routes cannot sign requests, so the route is configured to send a
-// fixed bearer token in the Authorization header. Compare in constant time.
-function tokenMatches(presented) {
-  const expected = process.env.NOTEHUB_INGEST_TOKEN || '';
-  if (!expected || !presented) return false;
-  const a = Buffer.from(presented);
-  const b = Buffer.from(expected);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-
-function authenticateNotehub(req, res, next) {
-  if (!process.env.NOTEHUB_INGEST_TOKEN) {
-    return res.status(503).json({ error: 'NOTEHUB_INGEST_TOKEN is not configured on this server' });
-  }
+// Notehub routes cannot sign requests, so the route sends a fixed bearer in
+// the Authorization header: an ingest-scoped API key from the dashboard, or
+// the legacy NOTEHUB_INGEST_TOKEN. services/ingestKeys.js does the matching.
+async function authenticateNotehub(req, res, next) {
   const header = req.headers.authorization || '';
   const presented = header.startsWith('Bearer ') ? header.slice(7).trim() : (req.headers['x-ingest-token'] || '');
-  if (!tokenMatches(presented)) {
-    return res.status(401).json({ error: 'Invalid ingest token' });
+  try {
+    const result = await authenticateIngestCredential(presented);
+    if (!result.ok) return res.status(result.status).json({ error: result.error });
+    req.ingestKey = result.key;
+    next();
+  } catch (err) {
+    console.error(`[ingest] auth failed: ${err.stack || err.message}`);
+    res.status(500).json({ error: 'Ingest authentication failed' });
   }
-  next();
 }
 
 /**
@@ -39,7 +34,13 @@ function authenticateNotehub(req, res, next) {
  *     summary: Receive a note forwarded by a Blues Notehub route
  *     description: >
  *       Configure a Notehub HTTP route to POST every event from the fleet to
- *       this endpoint with the header `Authorization: Bearer <NOTEHUB_INGEST_TOKEN>`.
+ *       this endpoint with the header `Authorization: Bearer <ingest key>`,
+ *       where the key was created in the dashboard with scope `ingest`
+ *       (`POST /api-keys` with `scope: ingest`). Such keys can only reach
+ *       this endpoint. The legacy `NOTEHUB_INGEST_TOKEN` environment value
+ *       is still accepted as a fallback and logs a deprecation warning.
+ *       When a dashboard key was used the response includes `ingestKey`
+ *       with the key's name.
  *       The body is Notehub's JSON event envelope. The server dispatches on
  *       the `file` field: `device.qo` registers or updates a node, `data.qo`
  *       stores readings, `alert.qo` opens, updates, or closes an incident and
@@ -66,12 +67,13 @@ function authenticateNotehub(req, res, next) {
  *     responses:
  *       200: { description: Event processed }
  *       400: { description: Malformed event }
- *       401: { description: Bad or missing ingest token }
- *       503: { description: Ingest token not configured }
+ *       401: { description: Bad or missing ingest key or token }
+ *       503: { description: No ingest key exists and NOTEHUB_INGEST_TOKEN is not set }
  */
 router.post('/ingest/notehub', authenticateNotehub, async (req, res) => {
   try {
     const result = await ingest(req.body, { baseUrl: process.env.DASHBOARD_URL });
+    if (req.ingestKey) result.ingestKey = req.ingestKey.name;
     res.status(200).json(result);
   } catch (err) {
     const status = err.status || 500;

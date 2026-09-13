@@ -36,6 +36,13 @@ const ApiKey = sequelize.define('ApiKey', {
     lastUsedAt: {
         type: DataTypes.DATE,
         allowNull: true
+    },
+    scope: {
+        // 'user' keys act as the owning user on the whole API. 'ingest' keys
+        // can only reach POST /ingest/notehub and never act as a user.
+        type: DataTypes.ENUM('user', 'ingest'),
+        allowNull: false,
+        defaultValue: 'user'
     }
 }, {
     timestamps: true,
