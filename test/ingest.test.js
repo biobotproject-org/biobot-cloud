@@ -150,6 +150,46 @@ test('GET /readings exposes per-reading and per-group anomaly fields', async () 
   assert.equal(noneGroup.readings[0].anomalyScore, 0);
 });
 
+test('GET /readings?deviceId= returns one node only, by id, deviceId or Notecard UID', async () => {
+  const reg = await post('/register', { username: 'viewer2', email: 'viewer2@example.com', password: 'Str0ngPassw0rd!' });
+  assert.equal(reg.status, 201, JSON.stringify(reg.body));
+  const auth = { authorization: `Bearer ${reg.body.token}` };
+
+  // Two nodes, each on its own Notecard.
+  const one = await post('/ingest/notehub', envelope('data.qo',
+    { requests: [{ deviceId: 'biobot-001', readings: readings({ temperature: 10 }), anomaly: { severity: 'none', score: 0 } }] },
+    { event: 'evt-two-nodes-a', device: 'dev:111111111111111' }), NH);
+  const two = await post('/ingest/notehub', envelope('data.qo',
+    { requests: [{ deviceId: 'biobot-002', readings: readings({ temperature: 20 }), anomaly: { severity: 'none', score: 0 } }] },
+    { event: 'evt-two-nodes-b', device: 'dev:222222222222222' }), NH);
+  assert.equal(one.status, 200);
+  assert.equal(two.status, 200);
+  const second = await models.Device.findOne({ where: { deviceId: 'biobot-002' } });
+
+  // Unfiltered: both nodes.
+  const all = await get('/readings', auth);
+  assert.equal(all.status, 200);
+  assert.deepEqual(new Set(all.body.requests.map(g => g.deviceId)), new Set(['biobot-001', 'biobot-002']));
+
+  // Each way the dashboard identifies a node must return that node alone.
+  for (const key of [second.id, 'biobot-002', 'dev:222222222222222']) {
+    const r = await get(`/readings?deviceId=${encodeURIComponent(key)}`, auth);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.totalReadings, 8, `key ${key}`);
+    assert.deepEqual(r.body.requests.map(g => g.deviceId), ['biobot-002'], `key ${key}`);
+    const temp = r.body.requests[0].readings.find(x => x.readingType === 'temperature');
+    assert.equal(Number(temp.value), 20);
+  }
+
+  // An id that matches nothing is empty, not everything.
+  for (const key of ['999', 'biobot-nope', 'dev:000']) {
+    const r = await get(`/readings?deviceId=${encodeURIComponent(key)}`, auth);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.totalReadings, 0, `key ${key}`);
+    assert.deepEqual(r.body.requests, []);
+  }
+});
+
 test('data.qo without a requests array is a 400, not a crash', async () => {
   const r = await post('/ingest/notehub', envelope('data.qo', { readings: [] }), NH);
   assert.equal(r.status, 400);
