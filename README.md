@@ -81,6 +81,33 @@ and carries on; ingestion never fails because mail is down.
 Hosts record what they found with `POST /incidents/{id}/acknowledge`
 and an outcome of `fire`, `false_alarm`, `sensor_fault`, or `unknown`.
 
+## Live map, wind and satellite cross-check
+
+`GET /map` returns everything the dashboard's Live Map draws: every node
+with its last position and severity, each open incident with the current
+wind at the node (Open-Meteo, no key) and a 30/60/120-minute spread
+envelope, and NASA FIRMS satellite hotspots within 25 km of any node.
+`GET /incidents/{id}/context` gives the same for one incident.
+
+The spread envelope is a planning aid, not a fire model: forward spread is
+10% of the 10-m wind speed (Cruz & Alexander 2019) and the shape uses the
+Canadian FBP length-to-breadth ratio. It ignores terrain and fuel moisture.
+
+The satellite cross-check needs a free FIRMS key from
+https://firms.modaps.eosdis.nasa.gov/api/map_key/ in `FIRMS_MAP_KEY`.
+Without it the check reports `not_configured` and nothing else changes.
+Weather is cached for 10 minutes per ~10 km cell, FIRMS for 15 minutes.
+
+## Demo fire
+
+An admin can run a scripted wildfire from the Live Map, or with
+`POST /demo/fire` (optional `latitude`/`longitude`). Five nodes of type
+`demo` are placed around the point using the live wind there, and about
+40 seconds of Notehub notes are played through the normal ingest path.
+Demo alerts never send email. `DELETE /demo` removes the demo nodes and
+every row they produced. `DEMO_STEP_MS` sets the length of one scenario
+second (default 1000).
+
 ## Tests
 
 ```sh
