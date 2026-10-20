@@ -2,6 +2,7 @@ const express = require('express');
 const { param, body, validationResult } = require('express-validator');
 const { Incident, Device } = require('../models');
 const { authenticate } = require('../middleware/authenticate');
+const { requireAdmin } = require('../middleware/requireAdmin');
 const { incidentContext, mapOverview } = require('../services/situation');
 const demo = require('../services/demo');
 const router = express.Router();
@@ -20,11 +21,6 @@ function rejectInvalid(req, res) {
     return true;
   }
   return false;
-}
-
-function requireAdmin(req, res, next) {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
-  next();
 }
 
 /**
