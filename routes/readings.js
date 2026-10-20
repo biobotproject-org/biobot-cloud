@@ -5,6 +5,30 @@ const { authenticate } = require('../middleware/authenticate');
 const { maxSeverity } = require('../services/severity');
 const router = express.Router();
 
+// The dashboard links nodes three ways: the database id (/devices/3), the
+// id the firmware was configured with (biobot-001), and the Notecard UID
+// Notehub stamps on every event (dev:864475046123456). Accept all three so
+// a caller never gets another node's data because it picked the wrong one.
+async function resolveDevice(id) {
+  const key = String(id).trim();
+  if (!key) return null;
+  if (/^\d+$/.test(key)) return Device.findByPk(key);
+  if (key.startsWith('dev:')) return Device.findOne({ where: { notecardUid: key } });
+  return Device.findOne({ where: { deviceId: key } });
+}
+
+function emptyPage(filters, page, limit) {
+  return {
+    count: 0, totalRequests: 0, totalReadings: 0, page, totalPages: 0, limit,
+    filters: {
+      ...filters,
+      sortBy: filters.sortBy || 'timestamp',
+      sortOrder: String(filters.sortOrder || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC',
+    },
+    requests: [],
+  };
+}
+
 /**
  * @swagger
  * tags:
@@ -81,7 +105,10 @@ const router = express.Router();
  *         name: deviceId
  *         schema:
  *           type: string
- *         description: Filter by string device ID
+ *         description: >
+ *           Filter to one node, given as its database id, its configured
+ *           deviceId (e.g. biobot-001), or its Notecard UID (dev:...). An
+ *           id that matches no node returns an empty page.
  *       - in: query
  *         name: readingType
  *         schema:
@@ -154,6 +181,9 @@ router.get('/readings', authenticate, async (req, res) => {
     } = req.query;
     
     const where = {};
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 100;
+    const offset = (pageNum - 1) * limitNum;
 
     if (readingType) {
       where.readingType = readingType;
@@ -166,8 +196,14 @@ router.get('/readings', authenticate, async (req, res) => {
     }
 
     if (deviceId) {
-      const device = await Device.findOne({ where: { deviceId } });
-      if (device) where.deviceId = device.id;
+      const device = await resolveDevice(deviceId);
+      if (!device) {
+        // An unknown device has no readings. Dropping the filter here used to
+        // return every node's readings, which the dashboard then plotted as
+        // one device.
+        return res.json(emptyPage({ deviceId, readingType, startDate, endDate, requestId, minValue, maxValue, unit, sortBy, sortOrder }, pageNum, limitNum));
+      }
+      where.deviceId = device.id;
     }
 
     if (requestId) {
@@ -188,9 +224,6 @@ router.get('/readings', authenticate, async (req, res) => {
     const orderField = validSortFields.includes(sortBy) ? sortBy : 'timestamp';
     const orderDirection = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-    const pageNum = parseInt(page, 10);
-    const limitNum = parseInt(limit, 10);
-    const offset = (pageNum - 1) * limitNum;
 
     const validGroupSortFields = ['timestamp', 'readingCount'];
     const groupSortField = validGroupSortFields.includes(sortBy) ? sortBy : 'timestamp';
