@@ -156,7 +156,7 @@ async function handleDataNote(env) {
   return { action: 'readings_stored', readings: stored, thresholdAlerts: alerts, duplicates, devices: [...devices] };
 }
 
-async function handleAlertNote(env, { baseUrl } = {}) {
+async function handleAlertNote(env, { baseUrl, silent = false } = {}) {
   const b = env.body;
   const event = ['raised', 'updated', 'cleared'].includes(b.event) ? b.event : null;
   if (!event) throw Object.assign(new Error('alert.qo body.event must be raised, updated, or cleared'), { status: 400 });
@@ -230,11 +230,14 @@ async function handleAlertNote(env, { baseUrl } = {}) {
   });
 
   let notified = false;
-  try {
-    const result = await notify.sendIncidentEmail({ incident, event: incidentEvent, device, baseUrl });
-    notified = !result.skipped;
-  } catch (err) {
-    console.error(`[notify] email failed for incident ${incident.id}: ${err.message}`);
+  // silent: demo scenarios drive this path and must never email real hosts.
+  if (!silent) {
+    try {
+      const result = await notify.sendIncidentEmail({ incident, event: incidentEvent, device, baseUrl });
+      notified = !result.skipped;
+    } catch (err) {
+      console.error(`[notify] email failed for incident ${incident.id}: ${err.message}`);
+    }
   }
   if (notified) await incidentEvent.update({ notified: true });
 
