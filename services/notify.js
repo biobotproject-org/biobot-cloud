@@ -90,10 +90,10 @@ function composeIncidentEmail({ incident, event, device, baseUrl }) {
     lines.push(`Incident: ${baseUrl.replace(/\/$/, '')}/incidents/${incident.id}`);
   }
   lines.push('');
-  lines.push('Sent by BioBot. Reply to this email to reach the team.');
+  lines.push('Sent by Wildfire Alarm. Reply to this email to reach the team.');
 
   return {
-    subject: `[BioBot] ${headline}`,
+    subject: `[Wildfire Alarm] ${headline}`,
     text: lines.join('\n'),
   };
 }
@@ -117,7 +117,7 @@ async function sendIncidentEmail(args) {
   }
   const { subject, text } = composeIncidentEmail(args);
   const info = await t.sendMail({
-    from: process.env.ALERT_EMAIL_FROM || 'BioBot <biobot@localhost>',
+    from: process.env.ALERT_EMAIL_FROM || 'Wildfire Alarm <alerts@localhost>',
     to,
     subject,
     text,
