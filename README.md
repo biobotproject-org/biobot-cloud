@@ -1,6 +1,6 @@
-# biobot-cloud
+# Wildfire Alarm — cloud API (biobot-cloud)
 
-REST API for the BioBot wildfire sensor network. Node.js, Express, and
+REST API for the Wildfire Alarm sensor network. Node.js, Express, and
 Sequelize on MySQL or MariaDB. Receives readings from sensor nodes, stores
 them, evaluates alert thresholds, and serves the dashboard.
 

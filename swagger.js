@@ -4,9 +4,9 @@ const options = {
     definition: {
         openapi: '3.0.0',
         info: {
-            title: 'BioBot Cloud API',
+            title: 'Wildfire Alarm API',
             version: '1.0.0',
-            description: 'REST API for the BioBot wildfire detection IoT platform',
+            description: 'REST API for Wildfire Alarm, early wildfire detection from low-cost sensor nodes',
         },
         servers: [
             { url: 'https://your-api-domain.com', description: 'Production' },
